@@ -73,6 +73,27 @@ For page previews, use `type: "renderPage"`:
 }
 ```
 
+For cropped previews, use `type: "renderPageArea"` with a PDF user-space rectangle:
+
+```js
+{
+  id: "request-4",
+  type: "renderPageArea",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    left: 72,
+    bottom: 120,
+    right: 360,
+    top: 360,
+    width: 512,
+    height: 512,
+    flags: 0x01,
+    password: ""
+  }
+}
+```
+
 Successful responses use this shape:
 
 ```js
@@ -180,9 +201,32 @@ worker.postMessage(
 );
 ```
 
+Area render responses use the same `{ rgbaBytes, width, height }` payload:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "renderPageArea",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      pageIndex: 0,
+      left: 72,
+      bottom: 120,
+      right: 360,
+      top: 360,
+      width: 512,
+      height: 512,
+      flags: 0x01,
+    },
+  },
+  [inputBytes.buffer]
+);
+```
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, and `renderPage` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, and `renderPageArea` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

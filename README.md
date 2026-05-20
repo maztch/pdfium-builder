@@ -90,6 +90,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)`
 - `wasm_pdf_add_rgba_image_page(handle, pageIndex, rgbaPtr, rgbaSize, imageWidth, imageHeight, x, y, displayWidth, displayHeight)`
 - `wasm_pdf_render_page_rgba(handle, pageIndex, width, height, flags, outPtrPtr, outSizePtr)`
+- `wasm_pdf_render_page_area_rgba(handle, pageIndex, left, bottom, right, top, width, height, flags, outPtrPtr, outSizePtr)`
 - `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)`
 - `wasm_pdf_free_buffer(ptr)`
 - `wasm_pdf_close(handle)`
@@ -153,6 +154,7 @@ Query return conventions:
 - `wasm_pdf_import_pages(srcHandle, pageRange, dstHandle, dstPageIndex)` imports a one-based PDFium page range like `"1,3,5-7"`. Pass an empty string to import all source pages. `dstPageIndex` may equal the destination page count to append.
 - `wasm_pdf_add_rgba_image_page(handle, pageIndex, rgbaPtr, rgbaSize, imageWidth, imageHeight, x, y, displayWidth, displayHeight)` returns `1` on success and `0` on failure. `rgbaPtr` must point to row-major 8-bit RGBA pixels, and `rgbaSize` must equal `imageWidth * imageHeight * 4`. `x`, `y`, `displayWidth`, and `displayHeight` are PDF user-space units.
 - `wasm_pdf_render_page_rgba(handle, pageIndex, width, height, flags, outPtrPtr, outSizePtr)` returns `1` on success and writes a row-major RGBA byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`. `flags` accepts PDFium render flags like `FPDF_ANNOT` (`0x01`); `FPDF_REVERSE_BYTE_ORDER` is ignored because this wrapper always returns RGBA.
+- `wasm_pdf_render_page_area_rgba(handle, pageIndex, left, bottom, right, top, width, height, flags, outPtrPtr, outSizePtr)` renders a PDF user-space rectangle into the requested output pixel dimensions. `right` must be greater than `left`, and `top` must be greater than `bottom`.
 
 Page box types:
 
@@ -182,7 +184,7 @@ Metadata keys:
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
 7. Optionally call `wasm_pdf_add_text_page` or `wasm_pdf_add_rgba_image_page`
-8. Optionally call `wasm_pdf_render_page_rgba` for preview pixels
+8. Optionally call `wasm_pdf_render_page_rgba` or `wasm_pdf_render_page_area_rgba` for preview pixels
 9. Call `wasm_pdf_save_copy`
 10. Create a Blob and download/save
 
@@ -197,6 +199,7 @@ Supported message types:
 - `addText`: payload includes `pdfBytes`, `text`, and optional placement/style fields.
 - `addImage`: payload includes `pdfBytes`, `rgbaBytes`, `imageWidth`, `imageHeight`, `x`, `y`, `displayWidth`, and `displayHeight`.
 - `renderPage`: payload includes `pdfBytes`, `width`, `height`, and optional `pageIndex`, `flags`, and `password`; response payload includes `rgbaBytes`, `width`, and `height`.
+- `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.
 
 ```js
 const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url), { type: "module" });
@@ -245,6 +248,29 @@ worker.postMessage(
       pageIndex: 0,
       width: 1024,
       height: 768,
+      flags: 0x01,
+    },
+  },
+  [inputBytes.buffer]
+);
+```
+
+To render only part of a page, pass a PDF-space rectangle:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "renderPageArea",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      pageIndex: 0,
+      left: 72,
+      bottom: 120,
+      right: 360,
+      top: 360,
+      width: 512,
+      height: 512,
       flags: 0x01,
     },
   },

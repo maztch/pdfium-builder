@@ -462,6 +462,32 @@ async function main() {
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     renderPtr = 0;
 
+    const invalidAreaRender = mod.ccall(
+      'wasm_pdf_render_page_area_rgba',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, 100, 100, 50, 150, 32, 32, 0, renderPtrPtr, renderSizePtr]
+    );
+    assert.equal(invalidAreaRender, 0, 'invalid area render rectangle should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid area render should report invalid argument');
+
+    const renderedArea = mod.ccall(
+      'wasm_pdf_render_page_area_rgba',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, 0, 0, 210, 270, 32, 32, 0, renderPtrPtr, renderSizePtr]
+    );
+    assert.equal(renderedArea, 1, 'render page area should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'render page area should clear last error');
+    renderPtr = mod.getValue(renderPtrPtr, 'i32');
+    const renderAreaSize = mod.getValue(renderSizePtr, 'i32');
+    assert.notEqual(renderPtr, 0, 'render area output pointer should not be null');
+    assert.equal(renderAreaSize, 32 * 32 * 4, 'render area output should be RGBA width * height * 4');
+    const renderAreaBytes = mod.HEAPU8.subarray(renderPtr, renderPtr + renderAreaSize);
+    assert.ok(renderAreaBytes.some((value) => value !== 0), 'render area output should contain non-zero pixels');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
+    renderPtr = 0;
+
     assert.equal(mod.ccall(
       'wasm_pdf_get_metadata',
       'number',
