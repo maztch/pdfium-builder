@@ -9,10 +9,15 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/fpdfapi/page/cpdf_annotcontext.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fpdfdoc/cpdf_annot.h"
+#include "core/fpdfdoc/cpdf_defaultappearance.h"
+#include "core/fpdfdoc/cpdf_generateap.h"
+#include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/widestring.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
@@ -77,6 +82,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_SET_ANNOTATION_URI_FAILED = 46,
   WASM_PDF_ERROR_SET_ANNOTATION_TEXT_FAILED = 47,
   WASM_PDF_ERROR_SET_ANNOTATION_BORDER_FAILED = 48,
+  WASM_PDF_ERROR_GENERATE_ANNOTATION_AP_FAILED = 49,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -313,6 +319,43 @@ bool IsAsciiString(const char* value) {
   for (const auto* cursor = reinterpret_cast<const unsigned char*>(value); *cursor; ++cursor) {
     if (*cursor > 0x7F) return false;
   }
+  return true;
+}
+
+bool SetFreeTextDefaultAppearance(CPDF_Document* doc,
+                                  CPDF_Dictionary* annot_dict,
+                                  double font_size,
+                                  uint32_t text_rgba) {
+  if (!doc || !annot_dict || !std::isfinite(font_size) || font_size <= 0) {
+    return false;
+  }
+
+  RetainPtr<CPDF_Dictionary> root = doc->GetMutableRoot();
+  if (!root) return false;
+
+  RetainPtr<CPDF_Dictionary> acroform = root->GetMutableDictFor("AcroForm");
+  if (!acroform) {
+    acroform = CPDF_InteractiveForm::InitAcroFormDict(doc);
+  }
+  if (!acroform) return false;
+
+  CPDF_DefaultAppearance default_appearance(annot_dict, acroform.Get());
+  auto font = default_appearance.GetFont();
+  if (!font.has_value() || font.value().name.IsEmpty()) return false;
+
+  unsigned int r = 0;
+  unsigned int g = 0;
+  unsigned int b = 0;
+  unsigned int ignored_alpha = 0;
+  SplitRgba(text_rgba, &r, &g, &b, &ignored_alpha);
+  const ByteString appearance = ByteString::Format(
+      "/%s %.2f Tf %.6f %.6f %.6f rg",
+      font.value().name.c_str(),
+      static_cast<float>(font_size),
+      r / 255.0f,
+      g / 255.0f,
+      b / 255.0f);
+  annot_dict->SetNewFor<CPDF_String>("DA", appearance);
   return true;
 }
 
@@ -1314,6 +1357,119 @@ int wasm_pdf_add_rectangle_annotation(uintptr_t handle,
     FPDFPage_CloseAnnot(annot);
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_BORDER_FAILED);
+    return 0;
+  }
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_add_freetext_annotation(uintptr_t handle,
+                                     int page_index,
+                                     double left,
+                                     double bottom,
+                                     double right,
+                                     double top,
+                                     const char* contents_utf8,
+                                     double font_size,
+                                     uint32_t text_rgba,
+                                     uint32_t border_rgba,
+                                     double border_width) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!IsValidPageRect(left, bottom, right, top) || !contents_utf8 ||
+      !std::isfinite(font_size) || font_size <= 0 ||
+      !std::isfinite(border_width) || border_width < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  std::u16string contents_utf16;
+  if (!DecodeUtf8ToUtf16(contents_utf8, &contents_utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  FPDF_DOCUMENT document = GetDocument(handle);
+  if (!document) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(document, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_ANNOTATION annot = FPDFPage_CreateAnnot(page, FPDF_ANNOT_FREETEXT);
+  if (!annot) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_ANNOTATION_FAILED);
+    return 0;
+  }
+
+  const FS_RECTF rect = MakePdfRect(left, bottom, right, top);
+  if (!FPDFAnnot_SetRect(annot, &rect)) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_RECT_FAILED);
+    return 0;
+  }
+
+  if (!FPDFAnnot_SetStringValue(
+          annot,
+          "Contents",
+          reinterpret_cast<const unsigned short*>(contents_utf16.c_str()))) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_TEXT_FAILED);
+    return 0;
+  }
+
+  unsigned int border_r = 0;
+  unsigned int border_g = 0;
+  unsigned int border_b = 0;
+  unsigned int border_a = 0;
+  SplitRgba(border_rgba, &border_r, &border_g, &border_b, &border_a);
+  if (!FPDFAnnot_SetColor(
+          annot,
+          FPDFANNOT_COLORTYPE_Color,
+          border_r,
+          border_g,
+          border_b,
+          border_a)) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_COLOR_FAILED);
+    return 0;
+  }
+
+  if (!FPDFAnnot_SetBorder(annot, 0, 0, static_cast<float>(border_width))) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_BORDER_FAILED);
+    return 0;
+  }
+
+  CPDF_AnnotContext* annot_context = CPDFAnnotContextFromFPDFAnnotation(annot);
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!annot_context || !doc ||
+      !SetFreeTextDefaultAppearance(doc,
+                                    annot_context->GetMutableAnnotDict().Get(),
+                                    font_size,
+                                    text_rgba) ||
+      !CPDF_GenerateAP::GenerateAnnotAP(
+          doc,
+          annot_context->GetMutableAnnotDict().Get(),
+          CPDF_Annot::Subtype::FREETEXT)) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_ANNOTATION_AP_FAILED);
     return 0;
   }
 

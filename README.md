@@ -89,6 +89,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)`
 - `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)`
 - `wasm_pdf_add_rectangle_annotation(handle, pageIndex, left, bottom, right, top, strokeRgba, borderWidth)`
+- `wasm_pdf_add_freetext_annotation(handle, pageIndex, left, bottom, right, top, contents, fontSize, textRgba, borderRgba, borderWidth)`
 - `wasm_pdf_set_annotation_rect(handle, pageIndex, annotationIndex, left, bottom, right, top)`
 - `wasm_pdf_set_annotation_color(handle, pageIndex, annotationIndex, rgba)`
 - `wasm_pdf_set_annotation_text(handle, pageIndex, annotationIndex, contents)`
@@ -160,6 +161,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `46`: set annotation URI failed
 - `47`: set annotation text failed
 - `48`: set annotation border failed
+- `49`: generate annotation appearance failed
 
 Query return conventions:
 
@@ -180,6 +182,7 @@ Query return conventions:
 - `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)` creates a link annotation with one quad and URI action. `uri` must be non-empty 7-bit ASCII.
 - `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)` creates a text note annotation with a 20x20 icon rectangle. `contents` must be valid UTF-8.
 - `wasm_pdf_add_rectangle_annotation(handle, pageIndex, left, bottom, right, top, strokeRgba, borderWidth)` creates a square/rectangle annotation. `borderWidth` must be finite and non-negative.
+- `wasm_pdf_add_freetext_annotation(handle, pageIndex, left, bottom, right, top, contents, fontSize, textRgba, borderRgba, borderWidth)` creates a visible FreeText annotation with a generated appearance stream. `contents` must be valid UTF-8; `fontSize` must be positive; `borderWidth` must be finite and non-negative.
 - `wasm_pdf_set_annotation_rect(handle, pageIndex, annotationIndex, left, bottom, right, top)` updates an annotation rectangle. For markup/link annotations it also updates the first quadpoint set.
 - `wasm_pdf_set_annotation_color(handle, pageIndex, annotationIndex, rgba)` updates annotation stroke/markup color.
 - `wasm_pdf_set_annotation_text(handle, pageIndex, annotationIndex, contents)` updates the annotation `Contents` string. `contents` must be valid UTF-8.
@@ -260,7 +263,7 @@ Supported message types:
 
 - `addText`: payload includes `pdfBytes`, `text`, and optional placement/style fields.
 - `addImage`: payload includes `pdfBytes`, `rgbaBytes`, `imageWidth`, `imageHeight`, `x`, `y`, `displayWidth`, and `displayHeight`.
-- `addAnnotation`: payload includes `pdfBytes`, `annotationType`, and type-specific fields. Supported values: `highlight`, `link`, `textNote`, `rectangle`.
+- `addAnnotation`: payload includes `pdfBytes`, `annotationType`, and type-specific fields. Supported values: `highlight`, `link`, `textNote`, `rectangle`, `freeText`.
 - `updateAnnotation`: payload includes `pdfBytes`, `updateType`, `pageIndex`, `annotationIndex`, and type-specific fields. Supported `updateType` values: `rect`, `color`, `text`, `uri`.
 - `renderPage`: payload includes `pdfBytes`, `width`, `height`, and optional `pageIndex`, `flags`, and `password`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.

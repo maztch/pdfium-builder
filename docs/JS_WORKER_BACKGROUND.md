@@ -94,7 +94,7 @@ For cropped previews, use `type: "renderPageArea"` with a PDF user-space rectang
 }
 ```
 
-Use `addAnnotation` to create highlights, links, text notes, or rectangle annotations:
+Use `addAnnotation` to create highlights, links, text notes, rectangle annotations, or visible FreeText boxes:
 
 ```js
 {
@@ -371,6 +371,32 @@ worker.postMessage(
       top: 180,
       rgba: 0xffff0000,
       borderWidth: 2,
+    },
+  },
+  [inputBytes.buffer]
+);
+```
+
+For visible editable text boxes, use `annotationType: "freeText"`:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addAnnotation",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      annotationType: "freeText",
+      pageIndex: 0,
+      left: 72,
+      bottom: 300,
+      right: 300,
+      top: 360,
+      contents: "Visible text box",
+      fontSize: 14,
+      textRgba: 0xff003366,
+      borderRgba: 0xff003366,
+      borderWidth: 1,
     },
   },
   [inputBytes.buffer]

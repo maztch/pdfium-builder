@@ -50,6 +50,7 @@ const ERROR_NAMES = Object.freeze({
   46: "set_annotation_uri_failed",
   47: "set_annotation_text_failed",
   48: "set_annotation_border_failed",
+  49: "generate_annotation_ap_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -364,6 +365,25 @@ async function addAnnotation(payload = {}) {
           numberOrDefault(payload.right, 0),
           numberOrDefault(payload.top, 0),
           numberOrDefault(payload.rgba, 0xffff0000),
+          numberOrDefault(payload.borderWidth, 1),
+        ]
+      );
+    } else if (annotationType === "freeText") {
+      added = mod.ccall(
+        "wasm_pdf_add_freetext_annotation",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "string", "number", "number", "number", "number"],
+        [
+          handle,
+          pageIndex,
+          numberOrDefault(payload.left, 0),
+          numberOrDefault(payload.bottom, 0),
+          numberOrDefault(payload.right, 0),
+          numberOrDefault(payload.top, 0),
+          stringOrDefault(payload.contents, ""),
+          numberOrDefault(payload.fontSize, 12),
+          numberOrDefault(payload.textRgba, 0xff000000),
+          numberOrDefault(payload.borderRgba, 0xff000000),
           numberOrDefault(payload.borderWidth, 1),
         ]
       );

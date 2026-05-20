@@ -26,6 +26,7 @@ Current exported functions are the `extern "C"` methods named like:
 - `wasm_pdf_add_link_annotation`
 - `wasm_pdf_add_text_note_annotation`
 - `wasm_pdf_add_rectangle_annotation`
+- `wasm_pdf_add_freetext_annotation`
 - `wasm_pdf_set_annotation_rect`
 - `wasm_pdf_set_annotation_color`
 - `wasm_pdf_set_annotation_text`
@@ -84,5 +85,5 @@ Generated JS glue in:
 
 You can grep to confirm a symbol exists:
 ```bash
-rg -n "wasm_pdf_set_annotation_rect|wasm_pdf_add_highlight_annotation|wasm_pdf_search_page_text|wasm_pdf_page_object_count|wasm_pdf_transform_page_object|wasm_pdf_add_text_page|wasm_pdf_add_rgba_image_page|wasm_pdf_render_page_rgba|wasm_pdf_render_page_area_rgba|wasm_pdf_save_copy" dist/pdfium.js
+rg -n "wasm_pdf_set_annotation_rect|wasm_pdf_add_freetext_annotation|wasm_pdf_add_highlight_annotation|wasm_pdf_search_page_text|wasm_pdf_page_object_count|wasm_pdf_transform_page_object|wasm_pdf_add_text_page|wasm_pdf_add_rgba_image_page|wasm_pdf_render_page_rgba|wasm_pdf_render_page_area_rgba|wasm_pdf_save_copy" dist/pdfium.js
 ```

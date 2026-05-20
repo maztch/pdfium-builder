@@ -502,8 +502,26 @@ async function main() {
       [handle, 0, 240, 120, 360, 190, 0xffff0000, 2]
     );
     assert.equal(rectangleAnnotation, 1, 'rectangle annotation should succeed');
+
+    const invalidFreeText = mod.ccall(
+      'wasm_pdf_add_freetext_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 72, 300, 260, 360, invalidTextPtr, 12, 0xff000000, 0xff003366, 1]
+    );
+    assert.equal(invalidFreeText, 0, 'malformed UTF-8 FreeText should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 15, 'malformed FreeText should report invalid UTF-8');
+
+    const freeTextAnnotation = mod.ccall(
+      'wasm_pdf_add_freetext_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'string', 'number', 'number', 'number', 'number'],
+      [handle, 0, 72, 300, 300, 360, 'Visible FreeText: café 中文', 14, 0xff003366, 0xff003366, 1]
+    );
+    assert.equal(freeTextAnnotation, 1, 'FreeText annotation should succeed');
+
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid annotation insert should clear last error');
-    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 4, 'annotation inserts should add four annotations');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 5, 'annotation inserts should add five annotations');
 
     const updatedHighlightRect = mod.ccall(
       'wasm_pdf_set_annotation_rect',
@@ -555,7 +573,7 @@ async function main() {
     );
     assert.equal(updatedLinkUri, 1, 'update link URI should succeed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid annotation updates should clear last error');
-    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 4, 'annotation updates should not change annotation count');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 5, 'annotation updates should not change annotation count');
 
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
@@ -587,7 +605,7 @@ async function main() {
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
     assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF should persist deleted object state');
-    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 4, 'saved PDF should persist annotations');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 5, 'saved PDF should persist annotations');
     assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
     assert.equal(mod.ccall(
       'wasm_pdf_get_page_box',
@@ -729,6 +747,25 @@ async function main() {
     assert.equal(renderAreaSize, 32 * 32 * 4, 'render area output should be RGBA width * height * 4');
     const renderAreaBytes = mod.HEAPU8.subarray(renderPtr, renderPtr + renderAreaSize);
     assert.ok(renderAreaBytes.some((value) => value !== 0), 'render area output should contain non-zero pixels');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
+    renderPtr = 0;
+
+    const renderedFreeTextArea = mod.ccall(
+      'wasm_pdf_render_page_area_rgba',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, 70, 295, 305, 365, 64, 32, 0x01, renderPtrPtr, renderSizePtr]
+    );
+    assert.equal(renderedFreeTextArea, 1, 'render FreeText area should succeed');
+    renderPtr = mod.getValue(renderPtrPtr, 'i32');
+    const renderFreeTextSize = mod.getValue(renderSizePtr, 'i32');
+    assert.notEqual(renderPtr, 0, 'render FreeText output pointer should not be null');
+    assert.equal(renderFreeTextSize, 64 * 32 * 4, 'render FreeText output should be RGBA width * height * 4');
+    const renderFreeTextBytes = mod.HEAPU8.subarray(renderPtr, renderPtr + renderFreeTextSize);
+    assert.ok(
+      renderFreeTextBytes.some((value, index) => index % 4 !== 3 && value !== 255),
+      'render FreeText area should contain visible non-white annotation pixels'
+    );
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     renderPtr = 0;
 
