@@ -36,6 +36,8 @@ const ERROR_NAMES = Object.freeze({
   32: "create_bitmap_failed",
   33: "set_image_bitmap_failed",
   34: "set_image_matrix_failed",
+  35: "create_render_bitmap_failed",
+  36: "fill_render_bitmap_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -235,12 +237,75 @@ async function addImage(payload = {}) {
   }
 }
 
+async function renderPage(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const width = numberOrDefault(payload.width, 0);
+  const height = numberOrDefault(payload.height, 0);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate render output pointers", 3);
+
+    const rendered = mod.ccall(
+      "wasm_pdf_render_page_rgba",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        width,
+        height,
+        numberOrDefault(payload.flags, 0),
+        outPtrPtr,
+        outSizePtr,
+      ]
+    );
+    if (!rendered) throwPdfiumError(mod, "Unable to render page");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Rendered page output is empty", 35);
+
+    const rgbaBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { rgbaBytes: rgbaBytes.buffer, width, height };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function handleRequest(message = {}) {
   if (message.type === "addText") {
     return addText(message.payload);
   }
   if (message.type === "addImage") {
     return addImage(message.payload);
+  }
+  if (message.type === "renderPage") {
+    return renderPage(message.payload);
   }
 
   throw new PdfiumWorkerError(`Unsupported worker message type: ${message.type}`, 2);
@@ -255,7 +320,10 @@ function serializeError(error) {
 }
 
 function transferablesFor(response) {
-  return response?.pdfBytes instanceof ArrayBuffer ? [response.pdfBytes] : [];
+  const transferables = [];
+  if (response?.pdfBytes instanceof ArrayBuffer) transferables.push(response.pdfBytes);
+  if (response?.rgbaBytes instanceof ArrayBuffer) transferables.push(response.rgbaBytes);
+  return transferables;
 }
 
 self.onmessage = (event) => {

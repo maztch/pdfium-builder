@@ -62,6 +62,8 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_CREATE_BITMAP_FAILED = 32,
   WASM_PDF_ERROR_SET_IMAGE_BITMAP_FAILED = 33,
   WASM_PDF_ERROR_SET_IMAGE_MATRIX_FAILED = 34,
+  WASM_PDF_ERROR_CREATE_RENDER_BITMAP_FAILED = 35,
+  WASM_PDF_ERROR_FILL_RENDER_BITMAP_FAILED = 36,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -1132,6 +1134,93 @@ int wasm_pdf_add_rgba_image_page(uintptr_t handle,
   }
 
   FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_render_page_rgba(uintptr_t handle,
+                              int page_index,
+                              int width,
+                              int height,
+                              int flags,
+                              uint8_t** out_ptr,
+                              uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (width <= 0 || height <= 0 || flags < 0 || !out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  const uint64_t row_size = static_cast<uint64_t>(width) * 4;
+  const uint64_t output_size = row_size * static_cast<uint64_t>(height);
+  if (row_size > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+      output_size > std::numeric_limits<uint32_t>::max()) {
+    SetLastError(WASM_PDF_ERROR_OUTPUT_TOO_LARGE);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_BITMAP bitmap = FPDFBitmap_CreateEx(width, height, FPDFBitmap_BGRA, nullptr, 0);
+  if (!bitmap) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_RENDER_BITMAP_FAILED);
+    return 0;
+  }
+
+  if (!FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0xFFFFFFFF)) {
+    FPDFBitmap_Destroy(bitmap);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_FILL_RENDER_BITMAP_FAILED);
+    return 0;
+  }
+
+  const int render_flags = flags & ~FPDF_REVERSE_BYTE_ORDER;
+  FPDF_RenderPageBitmap(bitmap, page, 0, 0, width, height, 0, render_flags);
+  FPDF_ClosePage(page);
+
+  const auto* bgra = reinterpret_cast<const uint8_t*>(FPDFBitmap_GetBuffer(bitmap));
+  const int stride = FPDFBitmap_GetStride(bitmap);
+  if (!bgra || stride < static_cast<int>(row_size)) {
+    FPDFBitmap_Destroy(bitmap);
+    SetLastError(WASM_PDF_ERROR_CREATE_RENDER_BITMAP_FAILED);
+    return 0;
+  }
+
+  std::vector<uint8_t> rgba(static_cast<size_t>(output_size));
+  for (int row = 0; row < height; ++row) {
+    const uint8_t* src = bgra + static_cast<size_t>(row) * stride;
+    uint8_t* dst = rgba.data() + static_cast<size_t>(row) * static_cast<size_t>(row_size);
+    for (int col = 0; col < width; ++col) {
+      dst[col * 4 + 0] = src[col * 4 + 2];
+      dst[col * 4 + 1] = src[col * 4 + 1];
+      dst[col * 4 + 2] = src[col * 4 + 0];
+      dst[col * 4 + 3] = src[col * 4 + 3];
+    }
+  }
+
+  FPDFBitmap_Destroy(bitmap);
+
+  if (!CopyVectorToMalloc(rgba, out_ptr, out_size)) {
+    return 0;
+  }
+
   ClearLastError();
   return 1;
 }

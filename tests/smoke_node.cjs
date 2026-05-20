@@ -55,6 +55,9 @@ async function main() {
   let metadataSizePtr = 0;
   let metadataPtr = 0;
   let textPtr = 0;
+  let renderPtr = 0;
+  let renderPtrPtr = 0;
+  let renderSizePtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
   let leftPtr = 0;
@@ -428,6 +431,37 @@ async function main() {
     assert.equal(invalidTextExtraction, 0, 'invalid page text extraction should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 6, 'invalid page text extraction should report load page failure');
 
+    renderPtrPtr = mod._malloc(4);
+    renderSizePtr = mod._malloc(4);
+    assert.notEqual(renderPtrPtr, 0, 'render out pointer malloc failed');
+    assert.notEqual(renderSizePtr, 0, 'render out size malloc failed');
+
+    const invalidRender = mod.ccall(
+      'wasm_pdf_render_page_rgba',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, 0, 64, 0, renderPtrPtr, renderSizePtr]
+    );
+    assert.equal(invalidRender, 0, 'invalid render dimensions should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid render dimensions should report invalid argument');
+
+    const rendered = mod.ccall(
+      'wasm_pdf_render_page_rgba',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, 64, 64, 0, renderPtrPtr, renderSizePtr]
+    );
+    assert.equal(rendered, 1, 'render page should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'render page should clear last error');
+    renderPtr = mod.getValue(renderPtrPtr, 'i32');
+    const renderSize = mod.getValue(renderSizePtr, 'i32');
+    assert.notEqual(renderPtr, 0, 'render output pointer should not be null');
+    assert.equal(renderSize, 64 * 64 * 4, 'render output should be RGBA width * height * 4');
+    const renderBytes = mod.HEAPU8.subarray(renderPtr, renderPtr + renderSize);
+    assert.ok(renderBytes.some((value) => value !== 0), 'render output should contain non-zero pixels');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
+    renderPtr = 0;
+
     assert.equal(mod.ccall(
       'wasm_pdf_get_metadata',
       'number',
@@ -448,6 +482,7 @@ async function main() {
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
   } finally {
+    if (renderPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     if (textPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);
     if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
@@ -463,6 +498,8 @@ async function main() {
     if (topPtr) mod._free(topPtr);
     if (metadataPtrPtr) mod._free(metadataPtrPtr);
     if (metadataSizePtr) mod._free(metadataSizePtr);
+    if (renderPtrPtr) mod._free(renderPtrPtr);
+    if (renderSizePtr) mod._free(renderSizePtr);
     if (inputPtr) mod._free(inputPtr);
     if (outPtrPtr) mod._free(outPtrPtr);
     if (outSizePtr) mod._free(outSizePtr);
