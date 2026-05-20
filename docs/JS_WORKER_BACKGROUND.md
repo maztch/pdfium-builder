@@ -94,11 +94,31 @@ For cropped previews, use `type: "renderPageArea"` with a PDF user-space rectang
 }
 ```
 
-For object selection UIs, use `queryPageObjects` and `deletePageObject`:
+Use `addAnnotation` to create highlights, links, text notes, or rectangle annotations:
 
 ```js
 {
   id: "request-5",
+  type: "addAnnotation",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    annotationType: "highlight",
+    pageIndex: 0,
+    left: 72,
+    bottom: 700,
+    right: 260,
+    top: 735,
+    rgba: 0x80ffff00,
+    password: ""
+  }
+}
+```
+
+For object selection UIs, use `queryPageObjects` and `deletePageObject`:
+
+```js
+{
+  id: "request-6",
   type: "queryPageObjects",
   payload: {
     pdfBytes: inputBytes.buffer,
@@ -110,7 +130,7 @@ For object selection UIs, use `queryPageObjects` and `deletePageObject`:
 
 ```js
 {
-  id: "request-6",
+  id: "request-7",
   type: "deletePageObject",
   payload: {
     pdfBytes: inputBytes.buffer,
@@ -125,7 +145,7 @@ Use `searchPageText` to find text and get PDF user-space rectangles for highligh
 
 ```js
 {
-  id: "request-7",
+  id: "request-8",
   type: "searchPageText",
   payload: {
     pdfBytes: inputBytes.buffer,
@@ -141,7 +161,7 @@ Use `transformPageObject` to move, scale, rotate, or shear a selected object:
 
 ```js
 {
-  id: "request-8",
+  id: "request-9",
   type: "transformPageObject",
   payload: {
     pdfBytes: inputBytes.buffer,
@@ -314,9 +334,32 @@ worker.postMessage(
 );
 ```
 
+Annotation requests return a saved PDF:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addAnnotation",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      annotationType: "rectangle",
+      pageIndex: 0,
+      left: 72,
+      bottom: 120,
+      right: 220,
+      top: 180,
+      rgba: 0xffff0000,
+      borderWidth: 2,
+    },
+  },
+  [inputBytes.buffer]
+);
+```
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

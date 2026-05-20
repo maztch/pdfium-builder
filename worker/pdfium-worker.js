@@ -43,6 +43,13 @@ const ERROR_NAMES = Object.freeze({
   39: "page_object_delete_failed",
   40: "page_object_transform_failed",
   41: "text_search_failed",
+  42: "create_annotation_failed",
+  43: "set_annotation_rect_failed",
+  44: "set_annotation_color_failed",
+  45: "set_annotation_attachment_failed",
+  46: "set_annotation_uri_failed",
+  47: "set_annotation_text_failed",
+  48: "set_annotation_border_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -269,6 +276,125 @@ async function addImage(payload = {}) {
     if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
     if (inputPtr) mod._free(inputPtr);
     if (imagePtr) mod._free(imagePtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
+async function addAnnotation(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const annotationType = stringOrDefault(payload.annotationType, "");
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const pageIndex = numberOrDefault(payload.pageIndex, 0);
+    let added = 0;
+    if (annotationType === "highlight") {
+      added = mod.ccall(
+        "wasm_pdf_add_highlight_annotation",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number"],
+        [
+          handle,
+          pageIndex,
+          numberOrDefault(payload.left, 0),
+          numberOrDefault(payload.bottom, 0),
+          numberOrDefault(payload.right, 0),
+          numberOrDefault(payload.top, 0),
+          numberOrDefault(payload.rgba, 0x80ffff00),
+        ]
+      );
+    } else if (annotationType === "link") {
+      added = mod.ccall(
+        "wasm_pdf_add_link_annotation",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "string"],
+        [
+          handle,
+          pageIndex,
+          numberOrDefault(payload.left, 0),
+          numberOrDefault(payload.bottom, 0),
+          numberOrDefault(payload.right, 0),
+          numberOrDefault(payload.top, 0),
+          stringOrDefault(payload.uri, ""),
+        ]
+      );
+    } else if (annotationType === "textNote") {
+      added = mod.ccall(
+        "wasm_pdf_add_text_note_annotation",
+        "number",
+        ["number", "number", "number", "number", "string", "number"],
+        [
+          handle,
+          pageIndex,
+          numberOrDefault(payload.x, 0),
+          numberOrDefault(payload.y, 0),
+          stringOrDefault(payload.contents, ""),
+          numberOrDefault(payload.rgba, 0xffffff00),
+        ]
+      );
+    } else if (annotationType === "rectangle") {
+      added = mod.ccall(
+        "wasm_pdf_add_rectangle_annotation",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number", "number"],
+        [
+          handle,
+          pageIndex,
+          numberOrDefault(payload.left, 0),
+          numberOrDefault(payload.bottom, 0),
+          numberOrDefault(payload.right, 0),
+          numberOrDefault(payload.top, 0),
+          numberOrDefault(payload.rgba, 0xffff0000),
+          numberOrDefault(payload.borderWidth, 1),
+        ]
+      );
+    } else {
+      throw new PdfiumWorkerError(`Unsupported annotation type: ${annotationType}`, 2);
+    }
+
+    if (!added) throwPdfiumError(mod, "Unable to add annotation");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
     if (outPtrPtr) mod._free(outPtrPtr);
     if (outSizePtr) mod._free(outSizePtr);
   }
@@ -655,6 +781,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "addImage") {
     return addImage(message.payload);
+  }
+  if (message.type === "addAnnotation") {
+    return addAnnotation(message.payload);
   }
   if (message.type === "renderPage") {
     return renderPage(message.payload);

@@ -84,6 +84,11 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_set_metadata(handle, key, value)`
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)`
 - `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)`
+- `wasm_pdf_annotation_count(handle, pageIndex)`
+- `wasm_pdf_add_highlight_annotation(handle, pageIndex, left, bottom, right, top, rgba)`
+- `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)`
+- `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)`
+- `wasm_pdf_add_rectangle_annotation(handle, pageIndex, left, bottom, right, top, strokeRgba, borderWidth)`
 - `wasm_pdf_page_object_count(handle, pageIndex)`
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)`
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)`
@@ -144,6 +149,13 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `39`: page object delete failed
 - `40`: page object transform failed
 - `41`: text search failed
+- `42`: create annotation failed
+- `43`: set annotation rect failed
+- `44`: set annotation color failed
+- `45`: set annotation attachment failed
+- `46`: set annotation URI failed
+- `47`: set annotation text failed
+- `48`: set annotation border failed
 
 Query return conventions:
 
@@ -159,6 +171,11 @@ Query return conventions:
 - `wasm_pdf_set_metadata(handle, key, value)` returns `1` on success and `0` on failure. `value` must be valid UTF-8.
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` returns `1` on success and writes extracted page text as a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)` returns `1` on success and writes a binary result buffer. Release non-null output with `wasm_pdf_free_buffer`. `query` must be valid UTF-8. Flags: `1` match case, `2` whole word, `4` consecutive.
+- `wasm_pdf_annotation_count(handle, pageIndex)` returns the number of page annotations, or `-1` on failure.
+- `wasm_pdf_add_highlight_annotation(handle, pageIndex, left, bottom, right, top, rgba)` creates a highlight annotation with one quad covering the PDF user-space rectangle.
+- `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)` creates a link annotation with one quad and URI action. `uri` must be non-empty 7-bit ASCII.
+- `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)` creates a text note annotation with a 20x20 icon rectangle. `contents` must be valid UTF-8.
+- `wasm_pdf_add_rectangle_annotation(handle, pageIndex, left, bottom, right, top, strokeRgba, borderWidth)` creates a square/rectangle annotation. `borderWidth` must be finite and non-negative.
 - `wasm_pdf_page_object_count(handle, pageIndex)` returns the number of page content objects, or `-1` on failure.
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)` returns `1` on success and writes the object type plus PDF user-space bounds.
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object from the page, regenerates page content, and returns `1` on success.
@@ -188,6 +205,13 @@ Page object types:
 - `4`: shading
 - `5`: form
 
+Annotation helper subtypes:
+
+- `1`: text note
+- `2`: link
+- `5`: square/rectangle
+- `9`: highlight
+
 Text search result buffer:
 
 - `uint32`: match count
@@ -209,11 +233,11 @@ Metadata keys:
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
-3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, `wasm_pdf_get_page_text`, `wasm_pdf_search_page_text`, `wasm_pdf_page_object_count`, and `wasm_pdf_get_page_object_info`
+3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, `wasm_pdf_get_page_text`, `wasm_pdf_search_page_text`, `wasm_pdf_annotation_count`, `wasm_pdf_page_object_count`, and `wasm_pdf_get_page_object_info`
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
-7. Optionally call `wasm_pdf_add_text_page`, `wasm_pdf_add_rgba_image_page`, `wasm_pdf_transform_page_object`, or `wasm_pdf_delete_page_object`
+7. Optionally call `wasm_pdf_add_text_page`, `wasm_pdf_add_rgba_image_page`, annotation helpers, `wasm_pdf_transform_page_object`, or `wasm_pdf_delete_page_object`
 8. Optionally call `wasm_pdf_render_page_rgba` or `wasm_pdf_render_page_area_rgba` for preview pixels
 9. Call `wasm_pdf_save_copy`
 10. Create a Blob and download/save
@@ -228,6 +252,7 @@ Supported message types:
 
 - `addText`: payload includes `pdfBytes`, `text`, and optional placement/style fields.
 - `addImage`: payload includes `pdfBytes`, `rgbaBytes`, `imageWidth`, `imageHeight`, `x`, `y`, `displayWidth`, and `displayHeight`.
+- `addAnnotation`: payload includes `pdfBytes`, `annotationType`, and type-specific fields. Supported values: `highlight`, `link`, `textNote`, `rectangle`.
 - `renderPage`: payload includes `pdfBytes`, `width`, `height`, and optional `pageIndex`, `flags`, and `password`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `queryPageObjects`: payload includes `pdfBytes` and optional `pageIndex`; response payload includes `objects`.

@@ -107,6 +107,8 @@ async function main() {
 
     assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 0, 'empty fixture should start with zero page objects');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'page object count should clear last error');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 0, 'empty fixture should start with zero annotations');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'annotation count should clear last error');
 
     widthPtr = mod._malloc(8);
     heightPtr = mod._malloc(8);
@@ -451,6 +453,58 @@ async function main() {
     assert.equal(deletedObject, 1, 'delete page object should succeed');
     assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 1, 'delete page object should remove one object');
 
+    const invalidLink = mod.ccall(
+      'wasm_pdf_add_link_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'string'],
+      [handle, 0, 72, 220, 180, 240, 'https://example.com/café']
+    );
+    assert.equal(invalidLink, 0, 'non-ASCII link URI should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'non-ASCII link URI should report invalid argument');
+
+    const highlightAnnotation = mod.ccall(
+      'wasm_pdf_add_highlight_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 72, 700, 260, 735, 0x80ffff00]
+    );
+    assert.equal(highlightAnnotation, 1, 'highlight annotation should succeed');
+
+    const linkAnnotation = mod.ccall(
+      'wasm_pdf_add_link_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'string'],
+      [handle, 0, 72, 650, 220, 680, 'https://example.com']
+    );
+    assert.equal(linkAnnotation, 1, 'link annotation should succeed');
+
+    const invalidNote = mod.ccall(
+      'wasm_pdf_add_text_note_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 250, 240, invalidTextPtr, 0xffffff00]
+    );
+    assert.equal(invalidNote, 0, 'malformed UTF-8 note should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 15, 'malformed note should report invalid UTF-8');
+
+    const noteAnnotation = mod.ccall(
+      'wasm_pdf_add_text_note_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'string', 'number'],
+      [handle, 0, 250, 240, 'Reviewer note: café 中文', 0xffffff00]
+    );
+    assert.equal(noteAnnotation, 1, 'text note annotation should succeed');
+
+    const rectangleAnnotation = mod.ccall(
+      'wasm_pdf_add_rectangle_annotation',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 240, 120, 360, 190, 0xffff0000, 2]
+    );
+    assert.equal(rectangleAnnotation, 1, 'rectangle annotation should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid annotation insert should clear last error');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 4, 'annotation inserts should add four annotations');
+
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
     assert.notEqual(outPtrPtr, 0, 'out pointer malloc failed');
@@ -481,6 +535,7 @@ async function main() {
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
     assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF should persist deleted object state');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 4, 'saved PDF should persist annotations');
     assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
     assert.equal(mod.ccall(
       'wasm_pdf_get_page_box',
