@@ -25,6 +25,7 @@ Current exported functions are the `extern "C"` methods named like:
 - `wasm_pdf_copy_page`
 - `wasm_pdf_import_pages`
 - `wasm_pdf_add_text_page`
+- `wasm_pdf_add_rgba_image_page`
 - `wasm_pdf_save_copy`
 
 If you remove a function here, also remove it from:
@@ -67,5 +68,5 @@ Generated JS glue in:
 
 You can grep to confirm a symbol exists:
 ```bash
-rg -n "wasm_pdf_add_text_page|wasm_pdf_save_copy" dist/pdfium.js
+rg -n "wasm_pdf_add_text_page|wasm_pdf_add_rgba_image_page|wasm_pdf_save_copy" dist/pdfium.js
 ```

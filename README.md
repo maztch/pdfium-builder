@@ -63,7 +63,7 @@ After building, run the dependency-free Node smoke test:
 node tests/smoke_node.cjs
 ```
 
-The test creates a minimal one-page PDF in memory, opens it through the WASM wrapper, adds text, saves a copy, and verifies the saved PDF can be reopened.
+The test creates a minimal one-page PDF in memory, opens it through the WASM wrapper, adds text and an RGBA image, saves a copy, and verifies the saved PDF can be reopened.
 
 ## Exported wrapper functions
 
@@ -88,6 +88,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)`
 - `wasm_pdf_import_pages(srcHandle, pageRange, dstHandle, dstPageIndex)`
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)`
+- `wasm_pdf_add_rgba_image_page(handle, pageIndex, rgbaPtr, rgbaSize, imageWidth, imageHeight, x, y, displayWidth, displayHeight)`
 - `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)`
 - `wasm_pdf_free_buffer(ptr)`
 - `wasm_pdf_close(handle)`
@@ -125,6 +126,10 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `28`: metadata write failed
 - `29`: load text page failed
 - `30`: text extraction failed
+- `31`: create image failed
+- `32`: create bitmap failed
+- `33`: set image bitmap failed
+- `34`: set image matrix failed
 
 Query return conventions:
 
@@ -143,6 +148,7 @@ Query return conventions:
 - `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)` imports one source page into the destination document. `dstPageIndex` may equal the destination page count to append.
 - `wasm_pdf_import_pages(srcHandle, pageRange, dstHandle, dstPageIndex)` imports a one-based PDFium page range like `"1,3,5-7"`. Pass an empty string to import all source pages. `dstPageIndex` may equal the destination page count to append.
+- `wasm_pdf_add_rgba_image_page(handle, pageIndex, rgbaPtr, rgbaSize, imageWidth, imageHeight, x, y, displayWidth, displayHeight)` returns `1` on success and `0` on failure. `rgbaPtr` must point to row-major 8-bit RGBA pixels, and `rgbaSize` must equal `imageWidth * imageHeight * 4`. `x`, `y`, `displayWidth`, and `displayHeight` are PDF user-space units.
 
 Page box types:
 
@@ -171,7 +177,7 @@ Metadata keys:
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
-7. Call `wasm_pdf_add_text_page`
+7. Optionally call `wasm_pdf_add_text_page` or `wasm_pdf_add_rgba_image_page`
 8. Call `wasm_pdf_save_copy`
 9. Create a Blob and download/save
 
@@ -179,7 +185,12 @@ See: `examples/browser_add_text_example.js`
 
 ## Worker usage flow
 
-Use `worker/pdfium-worker.js` for background processing. The worker accepts request messages shaped as `{ id, type: "addText", payload }` and responds with `{ id, type, ok, payload }` or `{ id, type, ok: false, error }`.
+Use `worker/pdfium-worker.js` for background processing. The worker accepts request messages shaped as `{ id, type, payload }` and responds with `{ id, type, ok, payload }` or `{ id, type, ok: false, error }`.
+
+Supported message types:
+
+- `addText`: payload includes `pdfBytes`, `text`, and optional placement/style fields.
+- `addImage`: payload includes `pdfBytes`, `rgbaBytes`, `imageWidth`, `imageHeight`, `x`, `y`, `displayWidth`, and `displayHeight`.
 
 ```js
 const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url), { type: "module" });
@@ -191,6 +202,28 @@ worker.postMessage(
     payload: { pdfBytes: inputBytes.buffer, text: "Hello from worker" },
   },
   [inputBytes.buffer]
+);
+```
+
+For images, pass decoded row-major RGBA pixels:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addImage",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      rgbaBytes: rgbaPixels.buffer,
+      imageWidth: 320,
+      imageHeight: 180,
+      x: 72,
+      y: 120,
+      displayWidth: 320,
+      displayHeight: 180,
+    },
+  },
+  [inputBytes.buffer, rgbaPixels.buffer]
 );
 ```
 

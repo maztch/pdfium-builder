@@ -35,6 +35,27 @@ Requests use this shape:
 }
 ```
 
+For image insertion, use `type: "addImage"` with decoded row-major RGBA pixels:
+
+```js
+{
+  id: "request-2",
+  type: "addImage",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    rgbaBytes: rgbaPixels.buffer,
+    imageWidth: 320,
+    imageHeight: 180,
+    x: 72,
+    y: 120,
+    displayWidth: 320,
+    displayHeight: 180,
+    pageIndex: 0,
+    password: ""
+  }
+}
+```
+
 Successful responses use this shape:
 
 ```js
@@ -101,9 +122,31 @@ worker.postMessage(
 );
 ```
 
+Image requests follow the same response shape:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addImage",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      rgbaBytes: rgbaPixels.buffer,
+      imageWidth: 320,
+      imageHeight: 180,
+      x: 72,
+      y: 120,
+      displayWidth: 320,
+      displayHeight: 180,
+    },
+  },
+  [inputBytes.buffer, rgbaPixels.buffer]
+);
+```
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText` and `addImage` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

@@ -17,12 +17,25 @@ const ERROR_NAMES = Object.freeze({
   13: "write_failed",
   14: "output_too_large",
   15: "invalid_utf8",
+  16: "create_page_failed",
+  17: "delete_page_failed",
+  18: "copy_page_failed",
+  19: "import_pages_failed",
   20: "pdfium_unknown",
   21: "pdfium_file",
   22: "pdfium_format",
   23: "pdfium_password",
   24: "pdfium_security",
   25: "pdfium_page",
+  26: "page_geometry_failed",
+  27: "metadata_read_failed",
+  28: "metadata_write_failed",
+  29: "load_text_page_failed",
+  30: "text_extraction_failed",
+  31: "create_image_failed",
+  32: "create_bitmap_failed",
+  33: "set_image_bitmap_failed",
+  34: "set_image_matrix_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -63,14 +76,14 @@ function throwPdfiumError(mod, message) {
   throw new PdfiumWorkerError(`${message} (${name})`, code);
 }
 
-function asUint8Array(value) {
+function asUint8Array(value, label = "payload.pdfBytes") {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   if (ArrayBuffer.isView(value)) {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   }
 
-  throw new PdfiumWorkerError("payload.pdfBytes must be an ArrayBuffer or typed array", 2);
+  throw new PdfiumWorkerError(`${label} must be an ArrayBuffer or typed array`, 2);
 }
 
 function numberOrDefault(value, fallback) {
@@ -148,9 +161,86 @@ async function addText(payload = {}) {
   }
 }
 
+async function addImage(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const rgbaBytes = asUint8Array(payload.rgbaBytes, "payload.rgbaBytes");
+
+  let inputPtr = 0;
+  let imagePtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    imagePtr = mod._malloc(rgbaBytes.length);
+    if (!inputPtr || !imagePtr) throw new PdfiumWorkerError("Unable to allocate worker input buffers", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+    mod.HEAPU8.set(rgbaBytes, imagePtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const added = mod.ccall(
+      "wasm_pdf_add_rgba_image_page",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number", "number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        imagePtr,
+        rgbaBytes.length,
+        numberOrDefault(payload.imageWidth, 0),
+        numberOrDefault(payload.imageHeight, 0),
+        numberOrDefault(payload.x, 0),
+        numberOrDefault(payload.y, 0),
+        numberOrDefault(payload.displayWidth, 0),
+        numberOrDefault(payload.displayHeight, 0),
+      ]
+    );
+    if (!added) throwPdfiumError(mod, "Unable to add image");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (imagePtr) mod._free(imagePtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function handleRequest(message = {}) {
   if (message.type === "addText") {
     return addText(message.payload);
+  }
+  if (message.type === "addImage") {
+    return addImage(message.payload);
   }
 
   throw new PdfiumWorkerError(`Unsupported worker message type: ${message.type}`, 2);

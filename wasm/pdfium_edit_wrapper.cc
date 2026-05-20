@@ -58,6 +58,10 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_METADATA_WRITE_FAILED = 28,
   WASM_PDF_ERROR_LOAD_TEXT_PAGE_FAILED = 29,
   WASM_PDF_ERROR_TEXT_EXTRACTION_FAILED = 30,
+  WASM_PDF_ERROR_CREATE_IMAGE_FAILED = 31,
+  WASM_PDF_ERROR_CREATE_BITMAP_FAILED = 32,
+  WASM_PDF_ERROR_SET_IMAGE_BITMAP_FAILED = 33,
+  WASM_PDF_ERROR_SET_IMAGE_MATRIX_FAILED = 34,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -996,6 +1000,126 @@ int wasm_pdf_add_text_page(uintptr_t handle,
 
   if (!FPDFPage_InsertObject(page, text_obj)) {
     FPDFPageObj_Destroy(text_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
+    return 0;
+  }
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return 0;
+  }
+
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_add_rgba_image_page(uintptr_t handle,
+                                 int page_index,
+                                 const uint8_t* rgba,
+                                 uint32_t rgba_size,
+                                 int image_width,
+                                 int image_height,
+                                 double x,
+                                 double y,
+                                 double display_width,
+                                 double display_height) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!rgba || image_width <= 0 || image_height <= 0 ||
+      !std::isfinite(x) || !std::isfinite(y) ||
+      !std::isfinite(display_width) || !std::isfinite(display_height) ||
+      display_width <= 0 || display_height <= 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  const uint64_t row_size = static_cast<uint64_t>(image_width) * 4;
+  const uint64_t expected_size = row_size * static_cast<uint64_t>(image_height);
+  if (row_size > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
+      expected_size > std::numeric_limits<uint32_t>::max() ||
+      rgba_size != static_cast<uint32_t>(expected_size)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_PAGEOBJECT image_obj = FPDFPageObj_NewImageObj(doc);
+  if (!image_obj) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_IMAGE_FAILED);
+    return 0;
+  }
+
+  FPDF_BITMAP bitmap = FPDFBitmap_CreateEx(image_width, image_height, FPDFBitmap_BGRA, nullptr, 0);
+  if (!bitmap) {
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_BITMAP_FAILED);
+    return 0;
+  }
+
+  auto* bgra = reinterpret_cast<uint8_t*>(FPDFBitmap_GetBuffer(bitmap));
+  const int stride = FPDFBitmap_GetStride(bitmap);
+  if (!bgra || stride < static_cast<int>(row_size)) {
+    FPDFBitmap_Destroy(bitmap);
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_BITMAP_FAILED);
+    return 0;
+  }
+
+  for (int row = 0; row < image_height; ++row) {
+    const uint8_t* src = rgba + static_cast<size_t>(row) * static_cast<size_t>(row_size);
+    uint8_t* dst = bgra + static_cast<size_t>(row) * stride;
+    for (int col = 0; col < image_width; ++col) {
+      dst[col * 4 + 0] = src[col * 4 + 2];
+      dst[col * 4 + 1] = src[col * 4 + 1];
+      dst[col * 4 + 2] = src[col * 4 + 0];
+      dst[col * 4 + 3] = src[col * 4 + 3];
+    }
+  }
+
+  FPDF_PAGE pages[] = {page};
+  if (!FPDFImageObj_SetBitmap(pages, 1, image_obj, bitmap)) {
+    FPDFBitmap_Destroy(bitmap);
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_IMAGE_BITMAP_FAILED);
+    return 0;
+  }
+  FPDFBitmap_Destroy(bitmap);
+
+  if (!FPDFImageObj_SetMatrix(image_obj,
+                              display_width,
+                              0,
+                              0,
+                              display_height,
+                              x,
+                              y)) {
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_IMAGE_MATRIX_FAILED);
+    return 0;
+  }
+
+  if (!FPDFPage_InsertObject(page, image_obj)) {
+    FPDFPageObj_Destroy(image_obj);
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
     return 0;

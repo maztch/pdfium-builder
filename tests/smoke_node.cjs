@@ -50,6 +50,7 @@ async function main() {
   let handle = 0;
   let sourceHandle = 0;
   let invalidTextPtr = 0;
+  let imagePtr = 0;
   let metadataPtrPtr = 0;
   let metadataSizePtr = 0;
   let metadataPtr = 0;
@@ -338,6 +339,32 @@ async function main() {
     assert.equal(added, 1, 'add text failed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid UTF-8 add text should clear last error');
 
+    const imageBytes = new Uint8Array([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 0, 255,
+    ]);
+    imagePtr = mod._malloc(imageBytes.length);
+    assert.notEqual(imagePtr, 0, 'image malloc failed');
+    mod.HEAPU8.set(imageBytes, imagePtr);
+
+    const invalidImage = mod.ccall(
+      'wasm_pdf_add_rgba_image_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, imagePtr, imageBytes.length - 1, 2, 2, 72, 120, 48, 48]
+    );
+    assert.equal(invalidImage, 0, 'invalid image size should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid image size should report invalid argument');
+
+    const addedImage = mod.ccall(
+      'wasm_pdf_add_rgba_image_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, imagePtr, imageBytes.length, 2, 2, 72, 120, 48, 48]
+    );
+    assert.equal(addedImage, 1, 'add RGBA image should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid image insert should clear last error');
+
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
     assert.notEqual(outPtrPtr, 0, 'out pointer malloc failed');
@@ -427,6 +454,7 @@ async function main() {
     if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
     if (invalidTextPtr) mod._free(invalidTextPtr);
+    if (imagePtr) mod._free(imagePtr);
     if (widthPtr) mod._free(widthPtr);
     if (heightPtr) mod._free(heightPtr);
     if (leftPtr) mod._free(leftPtr);
