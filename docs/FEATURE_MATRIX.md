@@ -61,6 +61,7 @@ Status legend:
 | Add RGBA image | `wasm_pdf_add_rgba_image_page` | `addImage` with `imageFormat: "rgba"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Expects row-major RGBA bytes. |
 | Add JPEG image | `wasm_pdf_add_jpeg_image_page` | `addImage` with `imageFormat: "jpeg"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Uses PDFium's encoded JPEG image path. |
 | Add PNG image | `wasm_pdf_add_png_image_page` | `addImage` with `imageFormat: "png"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Supports common non-interlaced 8-bit PNGs. |
+| Browser-decoded image ingestion | `wasm_pdf_add_rgba_image_page` | `addImage` with decoded `rgbaBytes` | Yes | [Usage](USAGE.md#browser-image-decoding), [Examples](EXAMPLES.md#add-browser-decoded-images) | Stable | Uses `createImageBitmap` and canvas to convert browser-supported PNG/WebP/JPEG/etc. to RGBA before insertion. |
 | Enumerate page objects | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Returns object index, type, and bounds. |
 | Delete page object | `wasm_pdf_delete_page_object` | `deletePageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Regenerates page content after deletion. |
 | Transform page object | `wasm_pdf_transform_page_object` | `transformPageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Matrix must be invertible. |
@@ -100,6 +101,7 @@ Status legend:
 | Binary attachment info buffer | `wasm_pdf_get_attachment_info` | Parsed by worker | Yes | [API](API.md#embedded-attachments) | Stable | Worker returns attachment metadata objects. |
 | RGBA render buffers | Render APIs | `renderPage`, `renderPageArea` | Yes | [API](API.md#rendering) | Stable | Wrapper normalizes output to RGBA. |
 | RGBA image input | `wasm_pdf_add_rgba_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is row-major RGBA. |
+| Browser image decode helper | `pdfium-api.js` | Creates `addImage` RGBA payloads | Yes | [Usage](USAGE.md#browser-image-decoding) | Stable | Browser-side `createImageBitmap` plus canvas path avoids native PNG decoder limitations. |
 | JPEG image input | `wasm_pdf_add_jpeg_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is encoded JPEG bytes. |
 | PNG image input | `wasm_pdf_add_png_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is encoded PNG bytes decoded by the wrapper. |
 

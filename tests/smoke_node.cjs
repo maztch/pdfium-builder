@@ -272,6 +272,19 @@ async function main() {
       doc.setMetadata('Title', 'Direct wrapper title');
       assert.equal(doc.metadata('Title'), 'Direct wrapper title', 'direct API metadata should round-trip');
       doc.addText({ pageIndex: 0, text: 'Direct wrapper text', x: 72, y: 120, fontSize: 12, rgba: 0xff111111 });
+      doc.addRgbaImage({
+        pageIndex: 0,
+        rgbaBytes: new Uint8Array([
+          255, 0, 0, 255, 0, 255, 0, 255,
+          0, 0, 255, 255, 255, 255, 0, 255,
+        ]),
+        imageWidth: 2,
+        imageHeight: 2,
+        x: 72,
+        y: 160,
+        displayWidth: 24,
+        displayHeight: 24,
+      });
       assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
       const matches = doc.searchPageText(0, 'Direct wrapper', 0);
       assert.equal(matches.length, 1, 'direct API search should return one match');

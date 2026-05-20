@@ -138,6 +138,31 @@ For encoded JPEG or PNG bytes, pass `imageFormat` and `imageBytes` instead of `r
 }
 ```
 
+For broader browser image support, decode with `createDecodedImagePayload()` from `pdfium-api.js` first, then send the returned RGBA payload:
+
+```js
+import { createDecodedImagePayload } from "../pdfium-api.js";
+
+const imagePayload = await createDecodedImagePayload(imageFile);
+worker.postMessage(
+  {
+    id: "request-browser-decoded-image",
+    type: "addImage",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      ...imagePayload,
+      x: 72,
+      y: 120,
+      displayWidth: 320,
+      displayHeight: 180,
+      pageIndex: 0,
+      password: ""
+    }
+  },
+  [inputBytes.buffer, imagePayload.rgbaBytes.buffer]
+);
+```
+
 For page previews, use `type: "renderPage"`:
 
 ```js

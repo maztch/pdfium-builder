@@ -52,7 +52,49 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, page text extraction, text search, text insertion, page insert/delete, page rotation/boxes/size, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, page text extraction, text search, text insertion, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+
+## Browser image decoding
+
+For arbitrary browser-supported image formats such as PNG, JPEG, WebP, AVIF, or GIF first frames, decode with `createImageBitmap` and canvas, then insert through the RGBA path:
+
+```js
+await pdfium.withDocument(pdfBytes, async (doc) => {
+  await doc.addImageFromSource(imageFile, {
+    pageIndex: 0,
+    x: 72,
+    y: 120,
+    displayWidth: 240,
+    displayHeight: 160,
+  });
+
+  return doc.save();
+});
+```
+
+To use the same decode path with the worker, build an RGBA payload and send it to `addImage`:
+
+```js
+import { createDecodedImagePayload } from "../pdfium-api.js";
+
+const imagePayload = await createDecodedImagePayload(imageFile);
+const result = await requestPdfWorker(
+  worker,
+  "addImage",
+  {
+    pdfBytes: pdfBytes.buffer,
+    ...imagePayload,
+    pageIndex: 0,
+    x: 72,
+    y: 120,
+    displayWidth: 240,
+    displayHeight: 160,
+  },
+  [pdfBytes.buffer, imagePayload.rgbaBytes.buffer]
+);
+```
+
+This browser-side path is more format-compatible than the native PNG decoder because it uses the browser's image stack before handing row-major RGBA bytes to WASM.
 
 ## Load the module
 

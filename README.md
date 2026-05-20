@@ -59,6 +59,7 @@ Required tools:
 - Open PDF bytes, save copies, and close handles.
 - Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, embedded attachments, annotations, page objects, text, and text search rectangles.
 - Mutate page rotation, page boxes, page size, metadata, embedded attachments, pages, page objects, annotations, text, and RGBA/JPEG/PNG images.
+- Decode arbitrary browser-supported image formats to RGBA with `createImageBitmap`/canvas helpers before insertion.
 - Render full pages or PDF-space page areas to RGBA buffers.
 - Use direct JS methods for common operations without manually managing `_malloc`, output pointers, or document handles.
 - Run heavy PDF work in a module worker with balanced cleanup.

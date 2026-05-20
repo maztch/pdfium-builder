@@ -88,6 +88,105 @@ function stringOrDefault(value, fallback) {
   return typeof value === "string" ? value : fallback;
 }
 
+function browserImageGlobals() {
+  const createBitmap = globalThis.createImageBitmap;
+  const offscreenCanvas = globalThis.OffscreenCanvas;
+  const documentObject = globalThis.document;
+  return { createBitmap, offscreenCanvas, documentObject };
+}
+
+function createCanvas(width, height) {
+  const { offscreenCanvas, documentObject } = browserImageGlobals();
+  if (typeof offscreenCanvas === "function") {
+    return new offscreenCanvas(width, height);
+  }
+
+  if (documentObject?.createElement) {
+    const canvas = documentObject.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+  }
+
+  throw new PdfiumApiError("Canvas image decoding requires OffscreenCanvas or document.createElement('canvas')", 2);
+}
+
+function isImageDataLike(value) {
+  return value &&
+    typeof value.width === "number" &&
+    typeof value.height === "number" &&
+    value.data &&
+    value.data.length === value.width * value.height * 4;
+}
+
+async function imageSourceToBitmap(source, options = {}) {
+  const { createBitmap } = browserImageGlobals();
+  if (typeof createBitmap !== "function") {
+    throw new PdfiumApiError("createImageBitmap is required for encoded image decoding", 2);
+  }
+
+  const imageBitmapType = globalThis.ImageBitmap;
+  if (imageBitmapType && source instanceof imageBitmapType) {
+    return { bitmap: source, shouldClose: false };
+  }
+
+  const blobType = globalThis.Blob;
+  if (blobType && source instanceof blobType) {
+    return { bitmap: await createBitmap(source), shouldClose: true };
+  }
+
+  if (source instanceof ArrayBuffer || ArrayBuffer.isView(source)) {
+    if (!blobType) throw new PdfiumApiError("Blob is required to decode ArrayBuffer image bytes", 2);
+    const bytes = asUint8Array(source, "imageSource");
+    const blob = new blobType([bytes], options.mimeType ? { type: options.mimeType } : undefined);
+    return { bitmap: await createBitmap(blob), shouldClose: true };
+  }
+
+  return { bitmap: await createBitmap(source), shouldClose: true };
+}
+
+export async function decodeImageToRgba(source, options = {}) {
+  if (isImageDataLike(source)) {
+    return {
+      rgbaBytes: new Uint8ClampedArray(source.data),
+      width: source.width,
+      height: source.height,
+    };
+  }
+
+  const { bitmap, shouldClose } = await imageSourceToBitmap(source, options);
+  try {
+    const width = bitmap.width;
+    const height = bitmap.height;
+    if (!width || !height) throw new PdfiumApiError("Decoded image has invalid dimensions", 2);
+
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new PdfiumApiError("Unable to acquire 2D canvas context for image decoding", 2);
+
+    context.clearRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    return {
+      rgbaBytes: new Uint8ClampedArray(imageData.data),
+      width,
+      height,
+    };
+  } finally {
+    if (shouldClose && typeof bitmap.close === "function") bitmap.close();
+  }
+}
+
+export async function createDecodedImagePayload(source, options = {}) {
+  const decoded = await decodeImageToRgba(source, options);
+  return {
+    imageFormat: "rgba",
+    rgbaBytes: decoded.rgbaBytes,
+    imageWidth: decoded.width,
+    imageHeight: decoded.height,
+  };
+}
+
 function parseSearchResults(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const matches = [];
@@ -375,6 +474,60 @@ export class PdfDocument {
       "Unable to add text"
     );
     return this;
+  }
+
+  addRgbaImage({
+    pageIndex = 0,
+    rgbaBytes,
+    imageWidth = 0,
+    imageHeight = 0,
+    x = 0,
+    y = 0,
+    displayWidth = 0,
+    displayHeight = 0,
+  } = {}) {
+    this.assertOpen();
+    const bytes = asUint8Array(rgbaBytes, "rgbaBytes");
+    let imagePtr = 0;
+
+    try {
+      imagePtr = this.mod._malloc(bytes.length);
+      if (!imagePtr) throw new PdfiumApiError("Unable to allocate RGBA image buffer", 3);
+      this.mod.HEAPU8.set(bytes, imagePtr);
+
+      this.call(
+        "wasm_pdf_add_rgba_image_page",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number", "number", "number", "number"],
+        [this.handle, pageIndex, imagePtr, bytes.length, imageWidth, imageHeight, x, y, displayWidth, displayHeight],
+        "Unable to add RGBA image"
+      );
+
+      return this;
+    } finally {
+      if (imagePtr) this.mod._free(imagePtr);
+    }
+  }
+
+  async addImageFromSource(source, {
+    pageIndex = 0,
+    x = 0,
+    y = 0,
+    displayWidth,
+    displayHeight,
+    mimeType,
+  } = {}) {
+    const decoded = await decodeImageToRgba(source, { mimeType });
+    return this.addRgbaImage({
+      pageIndex,
+      rgbaBytes: decoded.rgbaBytes,
+      imageWidth: decoded.width,
+      imageHeight: decoded.height,
+      x,
+      y,
+      displayWidth: displayWidth ?? decoded.width,
+      displayHeight: displayHeight ?? decoded.height,
+    });
   }
 
   insertBlankPage({ pageIndex = 0, width = 0, height = 0 } = {}) {

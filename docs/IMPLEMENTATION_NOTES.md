@@ -65,7 +65,7 @@ Unsupported PNGs fail with error code `51`:
 - Color-key transparency chunks.
 - Uncommon ancillary features that require color transforms.
 
-This keeps the wrapper dependency surface small while covering the normal browser-exported PNG path. For full PNG compatibility, decode to RGBA in JavaScript and use `wasm_pdf_add_rgba_image_page` or worker `addImage` with `rgbaBytes`.
+This keeps the wrapper dependency surface small while covering the normal browser-exported PNG path. For full PNG/WebP/JPEG/browser-image compatibility, use `decodeImageToRgba()` or `createDecodedImagePayload()` from `pdfium-api.js`, then insert through `wasm_pdf_add_rgba_image_page`, direct `doc.addRgbaImage()`, direct `doc.addImageFromSource()`, or worker `addImage` with `rgbaBytes`.
 
 ## Rendering Output
 

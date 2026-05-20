@@ -171,6 +171,34 @@ const result = await requestPdfWorker(
 
 Use `imageFormat: "jpeg"` for JPEG files. PNG support is limited to common non-interlaced 8-bit grayscale, RGB, grayscale-alpha, and RGBA PNGs.
 
+## Add Browser-Decoded Images
+
+Use browser decoding when you need broad PNG/WebP/JPEG compatibility:
+
+```js
+import { createDecodedImagePayload } from "../pdfium-api.js";
+
+const pdfBytes = new Uint8Array(await file.arrayBuffer());
+const imagePayload = await createDecodedImagePayload(imageFile);
+
+const result = await requestPdfWorker(
+  worker,
+  "addImage",
+  {
+    pdfBytes: pdfBytes.buffer,
+    ...imagePayload,
+    pageIndex: 0,
+    x: 72,
+    y: 120,
+    displayWidth: 240,
+    displayHeight: 160,
+  },
+  [pdfBytes.buffer, imagePayload.rgbaBytes.buffer]
+);
+```
+
+For direct usage, call `doc.addImageFromSource(imageFile, placement)` from `pdfium-api.js`.
+
 ## Add A FreeText Box
 
 ```js
