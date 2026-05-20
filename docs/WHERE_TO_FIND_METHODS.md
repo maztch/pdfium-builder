@@ -6,6 +6,7 @@ Start here:
 - `wasm/pdfium_edit_wrapper.cc`
 
 Current exported functions are the `extern "C"` methods named like:
+- `wasm_pdf_last_error`
 - `wasm_pdfium_init`
 - `wasm_pdf_open_from_bytes`
 - `wasm_pdf_add_text_page`
