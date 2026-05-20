@@ -420,6 +420,8 @@ async function main() {
       assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
       const matches = doc.searchPageText(0, 'Direct wrapper', 0);
       assert.equal(matches.length, 1, 'direct API search should return one match');
+      assert.equal(doc.redactPageText({ pageIndex: 0, query: 'Direct wrapper', flags: 0, rgba: 0xff000000 }), 1, 'direct API redactPageText should redact one match');
+      assert.doesNotMatch(doc.pageText(0), /Direct wrapper text/, 'direct API redactPageText should remove matching text object');
       const preview = doc.renderPage({ pageIndex: 0, width: 16, height: 16, flags: 0 });
       assert.equal(preview.rgbaBytes.length, 16 * 16 * 4, 'direct API render should return RGBA bytes');
       return doc.save();
@@ -1640,6 +1642,25 @@ async function main() {
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
     searchPtr = 0;
 
+    const redactedSmoke = mod.ccall(
+      'wasm_pdf_redact_page_text',
+      'number',
+      ['number', 'number', 'string', 'number', 'number'],
+      [reopened, 0, 'Smoke', 0, 0xff000000]
+    );
+    assert.equal(redactedSmoke, 1, 'redact page text should redact one match');
+    assert.equal(mod.ccall(
+      'wasm_pdf_search_page_text',
+      'number',
+      ['number', 'number', 'string', 'number', 'number', 'number'],
+      [reopened, 0, 'Smoke', 0, searchPtrPtr, searchSizePtr]
+    ), 1, 'search after redaction should succeed');
+    searchPtr = mod.getValue(searchPtrPtr, 'i32');
+    const redactedSearchSize = mod.getValue(searchSizePtr, 'i32');
+    assert.equal(new DataView(mod.HEAPU8.buffer, searchPtr, redactedSearchSize).getUint32(0, true), 0, 'redacted text should not be searchable');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
+    searchPtr = 0;
+
     const invalidRender = mod.ccall(
       'wasm_pdf_render_page_rgba',
       'number',
@@ -1762,6 +1783,48 @@ async function main() {
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     worker = createPdfiumNodeWorker();
+    let workerRedactBytes = createMinimalPdf();
+    let workerRedactResult = await requestPdfWorker(
+      worker,
+      'addText',
+      {
+        pdfBytes: workerRedactBytes.buffer,
+        text: 'Worker redact target',
+        pageIndex: 0,
+        x: 72,
+        y: 180,
+        fontSize: 12,
+        rgba: 0xff000000,
+      },
+      [workerRedactBytes.buffer]
+    );
+    workerRedactBytes = new Uint8Array(workerRedactResult.pdfBytes);
+    workerRedactResult = await requestPdfWorker(
+      worker,
+      'redactPageText',
+      {
+        pdfBytes: workerRedactBytes.buffer,
+        query: 'Worker redact',
+        pageIndex: 0,
+        rgba: 0xff000000,
+      },
+      [workerRedactBytes.buffer]
+    );
+    assert.equal(workerRedactResult.redactedCount, 1, 'worker redactPageText should redact one match');
+    workerRedactBytes = new Uint8Array(workerRedactResult.pdfBytes);
+    const workerRedactQueryBytes = workerRedactBytes.slice();
+    workerRedactResult = await requestPdfWorker(
+      worker,
+      'searchPageText',
+      {
+        pdfBytes: workerRedactQueryBytes.buffer,
+        query: 'Worker redact',
+        pageIndex: 0,
+      },
+      [workerRedactQueryBytes.buffer]
+    );
+    assert.equal(workerRedactResult.matches.length, 0, 'worker redacted text should not be searchable');
+
     let workerFormBytes = createAcroFormPdf();
     let workerFormResult = await requestPdfWorker(
       worker,

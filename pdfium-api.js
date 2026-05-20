@@ -62,6 +62,7 @@ export const PDFIUM_ERROR_NAMES = Object.freeze({
   58: "attachment_delete_failed",
   59: "form_read_failed",
   60: "form_write_failed",
+  61: "redaction_failed",
 });
 
 export class PdfiumApiError extends Error {
@@ -552,6 +553,19 @@ export class PdfDocument {
       "Unable to search page text"
     );
     return parseSearchResults(bytes);
+  }
+
+  redactPageText({ pageIndex = 0, query = "", flags = 0, rgba = 0xff000000 } = {}) {
+    const redacted = this.mod.ccall(
+      "wasm_pdf_redact_page_text",
+      "number",
+      ["number", "number", "string", "number", "number"],
+      [this.handle, pageIndex, query, flags, rgba]
+    );
+    if (redacted < 0) {
+      this.api.throwLastError("Unable to redact page text");
+    }
+    return redacted;
   }
 
   formFields() {

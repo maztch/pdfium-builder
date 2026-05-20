@@ -106,6 +106,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_ATTACHMENT_DELETE_FAILED = 58,
   WASM_PDF_ERROR_FORM_READ_FAILED = 59,
   WASM_PDF_ERROR_FORM_WRITE_FAILED = 60,
+  WASM_PDF_ERROR_REDACTION_FAILED = 61,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -113,6 +114,13 @@ int g_last_error = WASM_PDF_ERROR_NONE;
 struct MemoryFileAccess {
   const uint8_t* data = nullptr;
   uint32_t size = 0;
+};
+
+struct PdfRect {
+  double left = 0;
+  double bottom = 0;
+  double right = 0;
+  double top = 0;
 };
 
 void SetLastError(WasmPdfError error) {
@@ -927,6 +935,10 @@ FS_QUADPOINTSF MakePdfQuad(double left, double bottom, double right, double top)
       static_cast<float>(right),
       static_cast<float>(bottom),
   };
+}
+
+bool RectsIntersect(const PdfRect& a, const PdfRect& b) {
+  return a.left < b.right && a.right > b.left && a.bottom < b.top && a.top > b.bottom;
 }
 
 void SplitRgba(uint32_t rgba,
@@ -2372,6 +2384,197 @@ int wasm_pdf_search_page_text(uintptr_t handle,
 
   ClearLastError();
   return 1;
+}
+
+int wasm_pdf_redact_page_text(uintptr_t handle,
+                              int page_index,
+                              const char* query_utf8,
+                              int flags,
+                              uint32_t rgba) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+  if (!query_utf8 || !query_utf8[0] || flags < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return -1;
+  }
+
+  std::u16string query_utf16;
+  if (!DecodeUtf8ToUtf16(query_utf8, &query_utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return -1;
+  }
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (!text_page) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_LOAD_TEXT_PAGE_FAILED);
+    return -1;
+  }
+
+  FPDF_SCHHANDLE search =
+      FPDFText_FindStart(text_page,
+                         reinterpret_cast<const unsigned short*>(query_utf16.c_str()),
+                         static_cast<unsigned long>(flags),
+                         0);
+  if (!search) {
+    FPDFText_ClosePage(text_page);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+    return -1;
+  }
+
+  std::vector<PdfRect> redaction_rects;
+  int match_count = 0;
+  while (FPDFText_FindNext(search)) {
+    const int start_index = FPDFText_GetSchResultIndex(search);
+    const int char_count = FPDFText_GetSchCount(search);
+    if (start_index < 0 || char_count <= 0) {
+      FPDFText_FindClose(search);
+      FPDFText_ClosePage(text_page);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+      return -1;
+    }
+
+    const int rect_count = FPDFText_CountRects(text_page, start_index, char_count);
+    if (rect_count < 0) {
+      FPDFText_FindClose(search);
+      FPDFText_ClosePage(text_page);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+      return -1;
+    }
+
+    for (int i = 0; i < rect_count; ++i) {
+      PdfRect rect;
+      double top = 0;
+      if (!FPDFText_GetRect(text_page, i, &rect.left, &top, &rect.right, &rect.bottom)) {
+        FPDFText_FindClose(search);
+        FPDFText_ClosePage(text_page);
+        FPDF_ClosePage(page);
+        SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+        return -1;
+      }
+      rect.top = top;
+      if (rect.right > rect.left && rect.top > rect.bottom) {
+        redaction_rects.push_back(rect);
+      }
+    }
+
+    ++match_count;
+  }
+
+  FPDFText_FindClose(search);
+  FPDFText_ClosePage(text_page);
+
+  if (match_count == 0) {
+    FPDF_ClosePage(page);
+    ClearLastError();
+    return 0;
+  }
+  if (redaction_rects.empty()) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_REDACTION_FAILED);
+    return -1;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  if (object_count < 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return -1;
+  }
+
+  for (int object_index = object_count - 1; object_index >= 0; --object_index) {
+    FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, object_index);
+    if (!object || FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_TEXT) {
+      continue;
+    }
+
+    float left = 0;
+    float bottom = 0;
+    float right = 0;
+    float top = 0;
+    if (!FPDFPageObj_GetBounds(object, &left, &bottom, &right, &top)) {
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_BOUNDS_FAILED);
+      return -1;
+    }
+
+    const PdfRect object_rect{left, bottom, right, top};
+    bool intersects = false;
+    for (const PdfRect& redaction_rect : redaction_rects) {
+      if (RectsIntersect(object_rect, redaction_rect)) {
+        intersects = true;
+        break;
+      }
+    }
+    if (!intersects) continue;
+
+    if (!FPDFPage_RemoveObject(page, object)) {
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED);
+      return -1;
+    }
+    FPDFPageObj_Destroy(object);
+  }
+
+  unsigned int r = 0;
+  unsigned int g = 0;
+  unsigned int b = 0;
+  unsigned int a = 0;
+  SplitRgba(rgba, &r, &g, &b, &a);
+  if (a == 0) a = 255;
+
+  for (const PdfRect& rect : redaction_rects) {
+    FPDF_PAGEOBJECT cover = FPDFPageObj_CreateNewRect(
+        static_cast<float>(rect.left),
+        static_cast<float>(rect.bottom),
+        static_cast<float>(rect.right - rect.left),
+        static_cast<float>(rect.top - rect.bottom));
+    if (!cover) {
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_CREATE_IMAGE_FAILED);
+      return -1;
+    }
+    if (!FPDFPageObj_SetFillColor(cover, r, g, b, a) ||
+        !FPDFPath_SetDrawMode(cover, FPDF_FILLMODE_WINDING, 0)) {
+      FPDFPageObj_Destroy(cover);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_REDACTION_FAILED);
+      return -1;
+    }
+    if (!FPDFPage_InsertObject(page, cover)) {
+      FPDFPageObj_Destroy(cover);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
+      return -1;
+    }
+  }
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return -1;
+  }
+
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return match_count;
 }
 
 int wasm_pdf_annotation_count(uintptr_t handle, int page_index) {

@@ -62,6 +62,7 @@ const ERROR_NAMES = Object.freeze({
   58: "attachment_delete_failed",
   59: "form_read_failed",
   60: "form_write_failed",
+  61: "redaction_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -1285,6 +1286,50 @@ async function searchPageText(payload = {}) {
   }
 }
 
+async function redactPageText(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const redactedCount = mod.ccall(
+      "wasm_pdf_redact_page_text",
+      "number",
+      ["number", "number", "string", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        stringOrDefault(payload.query, ""),
+        numberOrDefault(payload.flags, 0),
+        numberOrDefault(payload.rgba, 0xff000000),
+      ]
+    );
+    if (redactedCount < 0) throwPdfiumError(mod, "Unable to redact page text");
+
+    return {
+      redactedCount,
+      pdfBytes: saveDocumentBytes(mod, handle).pdfBytes,
+    };
+  } finally {
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+  }
+}
+
 async function queryOutline(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -2381,6 +2426,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "searchPageText") {
     return searchPageText(message.payload);
+  }
+  if (message.type === "redactPageText") {
+    return redactPageText(message.payload);
   }
   if (message.type === "queryOutline") {
     return queryOutline(message.payload);

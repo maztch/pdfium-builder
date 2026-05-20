@@ -46,6 +46,20 @@ After text, combo, or list value writes, the wrapper ensures the AcroForm defaul
 
 Scope is intentionally basic: no PDF JavaScript execution, field calculation, field validation, or XFA support.
 
+## Text Redaction
+
+This PDFium build recognizes Redact annotations but does not expose an apply-redactions API.
+
+`wasm_pdf_redact_page_text()` therefore implements object-level text redaction:
+
+- Search page text with PDFium text search.
+- Collect match rectangles.
+- Remove text page objects whose bounds intersect those rectangles.
+- Paint opaque cover rectangles over the matched areas.
+- Regenerate page content.
+
+This removes matched text from extraction/search for simple generated text objects. It can remove more content than the exact query when a single text object contains multiple words or glyph runs. It does not redact image pixels, vector outlines, annotations, or hidden duplicate text.
+
 ## JPEG Insertion
 
 JPEG insertion uses PDFium's public `FPDFImageObj_LoadJpegFileInline()` API.

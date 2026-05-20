@@ -52,7 +52,24 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, AcroForm field read/write, page text extraction, text search, text insertion, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, AcroForm field read/write, page text extraction, text search/redaction, text insertion, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+
+Basic text redaction:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const redactedCount = doc.redactPageText({
+    pageIndex: 0,
+    query: "confidential",
+    flags: 2,
+    rgba: 0xff000000,
+  });
+  console.log(redactedCount);
+  return doc.save();
+});
+```
+
+Redaction is object-level in this build: matching text objects are removed and cover rectangles are painted over match bounds.
 
 Basic AcroForm usage:
 

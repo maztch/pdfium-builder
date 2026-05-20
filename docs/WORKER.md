@@ -311,6 +311,25 @@ Use `searchPageText` to find text and get PDF user-space rectangles for highligh
 }
 ```
 
+Use `redactPageText` to search text, remove intersecting text page objects, and paint cover rectangles:
+
+```js
+{
+  id: "request-redact",
+  type: "redactPageText",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    query: "confidential",
+    flags: 2,
+    rgba: 0xff000000,
+    password: ""
+  }
+}
+```
+
+This is object-level redaction in this build. It can remove more text than the exact match when one text object contains multiple words, and it does not redact image pixels, vector outlines, annotations, or hidden duplicate text.
+
 Use `queryOutline` to build a navigation tree from PDF bookmarks:
 
 ```js
@@ -685,7 +704,7 @@ The form API reads AcroForm field metadata, widget geometry, checked state, choi
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `queryFormFields`, `setFormFieldValue`, `setFormFieldChecked`, `setFormFieldSelectedIndex`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `redactPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `queryFormFields`, `setFormFieldValue`, `setFormFieldChecked`, `setFormFieldSelectedIndex`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

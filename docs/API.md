@@ -174,6 +174,7 @@ This is a basic AcroForm API. It reads field metadata, widget geometry, checkbox
 
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` writes extracted page text as UTF-8 bytes. Release with `wasm_pdf_free_buffer`.
 - `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)` writes a binary match buffer. `query` must be valid UTF-8.
+- `wasm_pdf_redact_page_text(handle, pageIndex, query, flags, rgba)` searches page text, removes intersecting text page objects, paints opaque redaction rectangles over match bounds, regenerates page content, and returns the number of matches redacted or `-1` on failure. `query` must be valid UTF-8.
 
 Search flags:
 
@@ -186,6 +187,8 @@ Text search result buffer layout:
 - `uint32`: match count
 - Per match: `int32 startIndex`, `int32 charCount`, `uint32 rectCount`
 - Per rectangle: `double left`, `double bottom`, `double right`, `double top`
+
+Redaction note: this build does not expose PDFium's apply-redactions API. `wasm_pdf_redact_page_text` removes whole text page objects whose bounds intersect search matches, then paints cover rectangles. This is suitable for simple generated text objects, but can remove more text than the exact match when a text object contains multiple words.
 
 ## Page content objects
 
@@ -339,3 +342,4 @@ Common render flag:
 - `58`: attachment delete failed
 - `59`: form read failed
 - `60`: form write failed
+- `61`: redaction failed

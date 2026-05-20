@@ -310,6 +310,21 @@ Returns `{ matches }`, where each match has:
 { startIndex, charCount, rects }
 ```
 
+## `redactPageText`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `query` | string | Yes | `""` | Text to redact. Must be valid UTF-8. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `flags` | number | No | `0` | Search flags: `1` match case, `2` whole word, `4` consecutive. |
+| `rgba` | number | No | `0xff000000` | Cover rectangle color. Alpha `0` is treated as opaque. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes, redactedCount }`.
+
+This removes whole text page objects whose bounds intersect search matches, paints cover rectangles over match bounds, and regenerates page content. It can remove more text than the exact match when a text object contains multiple words.
+
 ## `queryOutline`
 
 | Field | Type | Required | Default | Notes |
