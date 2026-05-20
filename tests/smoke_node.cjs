@@ -108,6 +108,18 @@ async function main() {
     assert.equal(invalidPageSize, 0, 'invalid page size query should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 6, 'invalid page size should report load page failure');
 
+    const rotation = mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [handle, 0]);
+    assert.equal(rotation, 0, 'fixture page should not be rotated');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'page rotation should clear last error');
+
+    const invalidRotation = mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [handle, 99]);
+    assert.equal(invalidRotation, -1, 'invalid page rotation query should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 6, 'invalid page rotation should report load page failure');
+
+    const permissions = mod.ccall('wasm_pdf_get_permissions', 'number', ['number'], [handle]);
+    assert.equal(permissions >>> 0, 0xffffffff, 'unprotected fixture should report full permissions');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'permissions should clear last error');
+
     invalidTextPtr = mod._malloc(3);
     assert.notEqual(invalidTextPtr, 0, 'invalid text malloc failed');
     mod.HEAPU8.set([0xc3, 0x28, 0], invalidTextPtr);
@@ -159,6 +171,7 @@ async function main() {
     );
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
+    assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 0, 'saved PDF rotation should remain zero');
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);

@@ -11,6 +11,8 @@ Current exported functions are the `extern "C"` methods named like:
 - `wasm_pdf_open_from_bytes`
 - `wasm_pdf_page_count`
 - `wasm_pdf_get_page_size`
+- `wasm_pdf_get_page_rotation`
+- `wasm_pdf_get_permissions`
 - `wasm_pdf_add_text_page`
 - `wasm_pdf_save_copy`
 

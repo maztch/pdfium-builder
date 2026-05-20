@@ -298,6 +298,53 @@ int wasm_pdf_get_page_size(uintptr_t handle,
   return 1;
 }
 
+int wasm_pdf_get_page_rotation(uintptr_t handle, int page_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return -1;
+  }
+
+  const int rotation = FPDFPage_GetRotation(page);
+  FPDF_ClosePage(page);
+
+  if (rotation < 0) {
+    SetLastError(WASM_PDF_ERROR_LOAD_PAGE_FAILED);
+    return -1;
+  }
+
+  ClearLastError();
+  return rotation;
+}
+
+uint32_t wasm_pdf_get_permissions(uintptr_t handle) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  const auto permissions = static_cast<uint32_t>(FPDF_GetDocPermissions(doc));
+  ClearLastError();
+  return permissions;
+}
+
 int wasm_pdf_add_text_page(uintptr_t handle,
                            int page_index,
                            const char* text_utf8,
