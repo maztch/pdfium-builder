@@ -1,2 +1,5 @@
 # Dependencies fetched by bootstrap script
 third_party/
+
+# Generated Emscripten cache artifacts
+.emcache/

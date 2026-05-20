@@ -9,7 +9,7 @@ PDF parsing/editing can block the main UI thread. A Worker moves that work to ba
 Use:
 - `worker/pdfium-worker.js`
 
-The worker is a classic worker because the current generated `dist/pdfium.js` is UMD/CommonJS-style output, not an ES module. It loads the generated runtime with `importScripts("../dist/pdfium.js")` and resolves `pdfium.wasm` relative to `dist/`.
+The worker is a module worker because `dist/pdfium.js` is generated as an ES module. It imports the generated runtime with `import PdfiumWasm from "../dist/pdfium.js"` and resolves `pdfium.wasm` relative to `dist/`.
 
 The linker already includes:
 - `-sENVIRONMENT=web,worker,node`
@@ -68,7 +68,7 @@ Error responses use this shape:
 ## Main thread usage
 
 ```js
-const worker = new Worker(new URL("../worker/pdfium-worker.js", import.meta.url));
+const worker = new Worker(new URL("../worker/pdfium-worker.js", import.meta.url), { type: "module" });
 
 worker.onmessage = (event) => {
   const { id, ok, payload, error } = event.data;
@@ -110,5 +110,5 @@ Requests are serialized through an internal queue so multiple main-thread messag
 ## Important notes
 
 - Use transferable `ArrayBuffer` values to avoid copying input/output PDF bytes.
-- Do not pass `{ type: "module" }` unless the Emscripten build is changed to emit ES module output.
+- Create the worker with `{ type: "module" }` when loading it without a bundler.
 - If you relocate `worker/` or `dist/`, update the paths in `worker/pdfium-worker.js`.

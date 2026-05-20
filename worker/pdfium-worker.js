@@ -1,6 +1,4 @@
-/* global PdfiumWasm, importScripts */
-
-importScripts("../dist/pdfium.js");
+import PdfiumWasm from "../dist/pdfium.js";
 
 const ERROR_NAMES = Object.freeze({
   0: "none",

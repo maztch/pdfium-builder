@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "scripts": {
+    "smoke": "node tests/smoke_node.cjs"
+  }
+}

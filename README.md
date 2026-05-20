@@ -117,7 +117,7 @@ See: `examples/browser_add_text_example.js`
 Use `worker/pdfium-worker.js` for background processing. The worker accepts request messages shaped as `{ id, type: "addText", payload }` and responds with `{ id, type, ok, payload }` or `{ id, type, ok: false, error }`.
 
 ```js
-const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url));
+const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url), { type: "module" });
 
 worker.postMessage(
   {

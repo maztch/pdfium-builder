@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
-const PdfiumWasm = require('../dist/pdfium.js');
+const distDir = path.join(__dirname, '..', 'dist');
 
 function createMinimalPdf() {
   const objects = [
@@ -33,9 +34,10 @@ function createMinimalPdf() {
 }
 
 async function main() {
+  const { default: PdfiumWasm } = await import(pathToFileURL(path.join(distDir, 'pdfium.js')));
   const mod = await PdfiumWasm({
     locateFile(file) {
-      return path.join(__dirname, '..', 'dist', file);
+      return path.join(distDir, file);
     },
   });
 
