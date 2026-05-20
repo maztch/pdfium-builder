@@ -17,6 +17,8 @@ Current exported functions are the `extern "C"` methods named like:
 - `wasm_pdf_set_page_box`
 - `wasm_pdf_set_page_size`
 - `wasm_pdf_get_permissions`
+- `wasm_pdf_get_metadata`
+- `wasm_pdf_set_metadata`
 - `wasm_pdf_insert_blank_page`
 - `wasm_pdf_delete_page`
 - `wasm_pdf_copy_page`

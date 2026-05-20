@@ -50,6 +50,9 @@ async function main() {
   let handle = 0;
   let sourceHandle = 0;
   let invalidTextPtr = 0;
+  let metadataPtrPtr = 0;
+  let metadataSizePtr = 0;
+  let metadataPtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
   let leftPtr = 0;
@@ -83,6 +86,11 @@ async function main() {
     );
     assert.notEqual(handle, 0, 'open input PDF failed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'successful open should clear last error');
+
+    metadataPtrPtr = mod._malloc(4);
+    metadataSizePtr = mod._malloc(4);
+    assert.notEqual(metadataPtrPtr, 0, 'metadata out pointer malloc failed');
+    assert.notEqual(metadataSizePtr, 0, 'metadata out size malloc failed');
 
     const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
     assert.equal(pageCount, 1, 'page count should report one page');
@@ -193,6 +201,43 @@ async function main() {
     const permissions = mod.ccall('wasm_pdf_get_permissions', 'number', ['number'], [handle]);
     assert.equal(permissions >>> 0, 0xffffffff, 'unprotected fixture should report full permissions');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'permissions should clear last error');
+
+    const metadataTitle = 'Smoke metadata: café 中文 😀';
+    const setMetadata = mod.ccall(
+      'wasm_pdf_set_metadata',
+      'number',
+      ['number', 'string', 'string'],
+      [handle, 'Title', metadataTitle]
+    );
+    assert.equal(setMetadata, 1, 'set metadata should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'set metadata should clear last error');
+
+    const gotMetadata = mod.ccall(
+      'wasm_pdf_get_metadata',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [handle, 'Title', metadataPtrPtr, metadataSizePtr]
+    );
+    assert.equal(gotMetadata, 1, 'get metadata should succeed');
+    metadataPtr = mod.getValue(metadataPtrPtr, 'i32');
+    const metadataSize = mod.getValue(metadataSizePtr, 'i32');
+    assert.notEqual(metadataPtr, 0, 'metadata output pointer should not be null for non-empty title');
+    assert.equal(
+      Buffer.from(mod.HEAPU8.subarray(metadataPtr, metadataPtr + metadataSize)).toString('utf8'),
+      metadataTitle,
+      'metadata title should round-trip as UTF-8'
+    );
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
+    metadataPtr = 0;
+
+    const invalidMetadataKey = mod.ccall(
+      'wasm_pdf_get_metadata',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [handle, 'NotARealMetadataKey', metadataPtrPtr, metadataSizePtr]
+    );
+    assert.equal(invalidMetadataKey, 0, 'invalid metadata key should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid metadata key should report invalid argument');
 
     const inserted = mod.ccall(
       'wasm_pdf_insert_blank_page',
@@ -332,10 +377,27 @@ async function main() {
     assert.equal(mod.getValue(bottomPtr, 'double'), 0, 'saved media bottom should persist');
     assert.equal(mod.getValue(rightPtr, 'double'), 420, 'saved media right should persist');
     assert.equal(mod.getValue(topPtr, 'double'), 540, 'saved media top should persist');
+    assert.equal(mod.ccall(
+      'wasm_pdf_get_metadata',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [reopened, 'Title', metadataPtrPtr, metadataSizePtr]
+    ), 1, 'saved PDF metadata title should be readable');
+    metadataPtr = mod.getValue(metadataPtrPtr, 'i32');
+    const savedMetadataSize = mod.getValue(metadataSizePtr, 'i32');
+    assert.notEqual(metadataPtr, 0, 'saved metadata output pointer should not be null');
+    assert.equal(
+      Buffer.from(mod.HEAPU8.subarray(metadataPtr, metadataPtr + savedMetadataSize)).toString('utf8'),
+      metadataTitle,
+      'saved metadata title should persist'
+    );
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
+    metadataPtr = 0;
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
   } finally {
+    if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
@@ -346,6 +408,8 @@ async function main() {
     if (bottomPtr) mod._free(bottomPtr);
     if (rightPtr) mod._free(rightPtr);
     if (topPtr) mod._free(topPtr);
+    if (metadataPtrPtr) mod._free(metadataPtrPtr);
+    if (metadataSizePtr) mod._free(metadataSizePtr);
     if (inputPtr) mod._free(inputPtr);
     if (outPtrPtr) mod._free(outPtrPtr);
     if (outSizePtr) mod._free(outSizePtr);

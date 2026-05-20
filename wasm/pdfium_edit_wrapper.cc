@@ -9,6 +9,14 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_reference.h"
+#include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/widestring.h"
+#include "fpdfsdk/cpdfsdk_helpers.h"
+#include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdf_ppo.h"
 #include "public/fpdf_save.h"
@@ -45,6 +53,8 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_PDFIUM_SECURITY = 24,
   WASM_PDF_ERROR_PDFIUM_PAGE = 25,
   WASM_PDF_ERROR_PAGE_GEOMETRY_FAILED = 26,
+  WASM_PDF_ERROR_METADATA_READ_FAILED = 27,
+  WASM_PDF_ERROR_METADATA_WRITE_FAILED = 28,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -133,6 +143,75 @@ bool DecodeUtf8ToUtf16(const char* input, std::u16string* output) {
   }
 
   return true;
+}
+
+std::vector<uint8_t> Utf16StringToUtf16LeBytes(const std::u16string& input) {
+  std::vector<uint8_t> bytes;
+  bytes.reserve(input.size() * 2);
+  for (char16_t value : input) {
+    bytes.push_back(static_cast<uint8_t>(value & 0xFF));
+    bytes.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+  }
+  return bytes;
+}
+
+bool CopyBytesToMalloc(const uint8_t* data,
+                       size_t size,
+                       uint8_t** out_ptr,
+                       uint32_t* out_size) {
+  if (size > std::numeric_limits<uint32_t>::max()) {
+    SetLastError(WASM_PDF_ERROR_OUTPUT_TOO_LARGE);
+    return false;
+  }
+
+  uint8_t* buffer = nullptr;
+  if (size > 0) {
+    buffer = reinterpret_cast<uint8_t*>(malloc(size));
+    if (!buffer) {
+      SetLastError(WASM_PDF_ERROR_OUT_OF_MEMORY);
+      return false;
+    }
+    memcpy(buffer, data, size);
+  }
+
+  *out_ptr = buffer;
+  *out_size = static_cast<uint32_t>(size);
+  return true;
+}
+
+bool CopyVectorToMalloc(const std::vector<uint8_t>& data,
+                        uint8_t** out_ptr,
+                        uint32_t* out_size) {
+  return CopyBytesToMalloc(data.data(), data.size(), out_ptr, out_size);
+}
+
+bool IsAllowedMetadataKey(const char* key) {
+  if (!key || !key[0]) return false;
+
+  constexpr const char* kAllowedKeys[] = {
+      "Title",        "Author", "Subject", "Keywords",
+      "Creator",      "Producer", "CreationDate", "ModDate",
+  };
+  for (const char* allowed_key : kAllowedKeys) {
+    if (strcmp(key, allowed_key) == 0) return true;
+  }
+  return false;
+}
+
+RetainPtr<CPDF_Dictionary> GetOrCreateInfoDictionary(FPDF_DOCUMENT document) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc) return nullptr;
+
+  RetainPtr<CPDF_Dictionary> info = doc->GetInfo();
+  if (info) return info;
+
+  CPDF_Parser* parser = doc->GetParser();
+  if (!parser || !parser->GetTrailer()) return nullptr;
+
+  auto new_info = doc->NewIndirect<CPDF_Dictionary>();
+  auto* trailer = const_cast<CPDF_Dictionary*>(parser->GetTrailer());
+  trailer->SetNewFor<CPDF_Reference>("Info", doc, new_info->GetObjNum());
+  return doc->GetInfo();
 }
 
 enum WasmPdfPageBox : int {
@@ -554,6 +633,93 @@ uint32_t wasm_pdf_get_permissions(uintptr_t handle) {
   return permissions;
 }
 
+int wasm_pdf_get_metadata(uintptr_t handle,
+                          const char* key,
+                          uint8_t** out_ptr,
+                          uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!IsAllowedMetadataKey(key) || !out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  const unsigned long required_size = FPDF_GetMetaText(doc, key, nullptr, 0);
+  if (required_size == 0) {
+    SetLastError(WASM_PDF_ERROR_METADATA_READ_FAILED);
+    return 0;
+  }
+
+  std::vector<uint8_t> utf16le(required_size);
+  const unsigned long written_size =
+      FPDF_GetMetaText(doc, key, utf16le.data(), required_size);
+  if (written_size != required_size) {
+    SetLastError(WASM_PDF_ERROR_METADATA_READ_FAILED);
+    return 0;
+  }
+
+  if (utf16le.size() >= 2 && utf16le[utf16le.size() - 1] == 0 &&
+      utf16le[utf16le.size() - 2] == 0) {
+    utf16le.resize(utf16le.size() - 2);
+  }
+
+  const WideString wide = WideString::FromUTF16LE(utf16le);
+  const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
+  const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
+  if (!CopyBytesToMalloc(utf8_data, utf8.GetLength(), out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_metadata(uintptr_t handle, const char* key, const char* value_utf8) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!IsAllowedMetadataKey(key) || !value_utf8) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT document = GetDocument(handle);
+  if (!document) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  std::u16string utf16;
+  if (!DecodeUtf8ToUtf16(value_utf8, &utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  RetainPtr<CPDF_Dictionary> info = GetOrCreateInfoDictionary(document);
+  if (!info) {
+    SetLastError(WASM_PDF_ERROR_METADATA_WRITE_FAILED);
+    return 0;
+  }
+
+  const std::vector<uint8_t> utf16le = Utf16StringToUtf16LeBytes(utf16);
+  const WideString wide = WideString::FromUTF16LE(utf16le);
+  info->SetNewFor<CPDF_String>(key, wide.AsStringView());
+  ClearLastError();
+  return 1;
+}
+
 int wasm_pdf_insert_blank_page(uintptr_t handle,
                                int page_index,
                                double width,
@@ -793,16 +959,10 @@ int wasm_pdf_save_copy(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_size) 
     return 0;
   }
 
-  uint8_t* buffer = reinterpret_cast<uint8_t*>(malloc(writer.data.size()));
-  if (!buffer) {
-    SetLastError(WASM_PDF_ERROR_OUT_OF_MEMORY);
+  if (!CopyVectorToMalloc(writer.data, out_ptr, out_size)) {
     return 0;
   }
 
-  memcpy(buffer, writer.data.data(), writer.data.size());
-
-  *out_ptr = buffer;
-  *out_size = static_cast<uint32_t>(writer.data.size());
   ClearLastError();
   return 1;
 }
