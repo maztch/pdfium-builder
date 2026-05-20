@@ -83,6 +83,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)`
 - `wasm_pdf_set_metadata(handle, key, value)`
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)`
+- `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)`
 - `wasm_pdf_page_object_count(handle, pageIndex)`
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)`
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)`
@@ -142,6 +143,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `38`: page object bounds failed
 - `39`: page object delete failed
 - `40`: page object transform failed
+- `41`: text search failed
 
 Query return conventions:
 
@@ -156,6 +158,7 @@ Query return conventions:
 - `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)` returns `1` on success and writes a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_set_metadata(handle, key, value)` returns `1` on success and `0` on failure. `value` must be valid UTF-8.
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` returns `1` on success and writes extracted page text as a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
+- `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)` returns `1` on success and writes a binary result buffer. Release non-null output with `wasm_pdf_free_buffer`. `query` must be valid UTF-8. Flags: `1` match case, `2` whole word, `4` consecutive.
 - `wasm_pdf_page_object_count(handle, pageIndex)` returns the number of page content objects, or `-1` on failure.
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)` returns `1` on success and writes the object type plus PDF user-space bounds.
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object from the page, regenerates page content, and returns `1` on success.
@@ -185,6 +188,12 @@ Page object types:
 - `4`: shading
 - `5`: form
 
+Text search result buffer:
+
+- `uint32`: match count
+- Per match: `int32 startIndex`, `int32 charCount`, `uint32 rectCount`
+- Per rectangle: `double left`, `double bottom`, `double right`, `double top`
+
 Metadata keys:
 
 - `Title`
@@ -200,7 +209,7 @@ Metadata keys:
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
-3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, `wasm_pdf_get_page_text`, `wasm_pdf_page_object_count`, and `wasm_pdf_get_page_object_info`
+3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, `wasm_pdf_get_page_text`, `wasm_pdf_search_page_text`, `wasm_pdf_page_object_count`, and `wasm_pdf_get_page_object_info`
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
@@ -222,6 +231,7 @@ Supported message types:
 - `renderPage`: payload includes `pdfBytes`, `width`, `height`, and optional `pageIndex`, `flags`, and `password`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `queryPageObjects`: payload includes `pdfBytes` and optional `pageIndex`; response payload includes `objects`.
+- `searchPageText`: payload includes `pdfBytes`, `query`, and optional `pageIndex`, `flags`, and `password`; response payload includes `matches`.
 - `deletePageObject`: payload includes `pdfBytes`, `pageIndex`, and `objectIndex`; response payload includes `pdfBytes`.
 - `transformPageObject`: payload includes `pdfBytes`, `pageIndex`, `objectIndex`, and affine matrix values `a`, `b`, `c`, `d`, `e`, `f`; response payload includes `pdfBytes`.
 

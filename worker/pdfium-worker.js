@@ -42,6 +42,7 @@ const ERROR_NAMES = Object.freeze({
   38: "page_object_bounds_failed",
   39: "page_object_delete_failed",
   40: "page_object_transform_failed",
+  41: "text_search_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -98,6 +99,38 @@ function numberOrDefault(value, fallback) {
 
 function stringOrDefault(value, fallback) {
   return typeof value === "string" ? value : fallback;
+}
+
+function parseSearchResults(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const matches = [];
+  let offset = 0;
+  const matchCount = view.getUint32(offset, true);
+  offset += 4;
+
+  for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
+    const startIndex = view.getInt32(offset, true);
+    offset += 4;
+    const charCount = view.getInt32(offset, true);
+    offset += 4;
+    const rectCount = view.getUint32(offset, true);
+    offset += 4;
+    const rects = [];
+
+    for (let rectIndex = 0; rectIndex < rectCount; rectIndex += 1) {
+      rects.push({
+        left: view.getFloat64(offset, true),
+        bottom: view.getFloat64(offset + 8, true),
+        right: view.getFloat64(offset + 16, true),
+        top: view.getFloat64(offset + 24, true),
+      });
+      offset += 32;
+    }
+
+    matches.push({ startIndex, charCount, rects });
+  }
+
+  return matches;
 }
 
 async function addText(payload = {}) {
@@ -433,6 +466,63 @@ async function queryPageObjects(payload = {}) {
   }
 }
 
+async function searchPageText(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate search output pointers", 3);
+
+    const searched = mod.ccall(
+      "wasm_pdf_search_page_text",
+      "number",
+      ["number", "number", "string", "number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        stringOrDefault(payload.query, ""),
+        numberOrDefault(payload.flags, 0),
+        outPtrPtr,
+        outSizePtr,
+      ]
+    );
+    if (!searched) throwPdfiumError(mod, "Unable to search page text");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || outSize < 4) throw new PdfiumWorkerError("Search output is invalid", 41);
+
+    const bytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { matches: parseSearchResults(bytes) };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function deletePageObject(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -574,6 +664,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "queryPageObjects") {
     return queryPageObjects(message.payload);
+  }
+  if (message.type === "searchPageText") {
+    return searchPageText(message.payload);
   }
   if (message.type === "deletePageObject") {
     return deletePageObject(message.payload);

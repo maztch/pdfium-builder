@@ -55,6 +55,9 @@ async function main() {
   let metadataSizePtr = 0;
   let metadataPtr = 0;
   let textPtr = 0;
+  let searchPtr = 0;
+  let searchPtrPtr = 0;
+  let searchSizePtr = 0;
   let renderPtr = 0;
   let renderPtrPtr = 0;
   let renderSizePtr = 0;
@@ -514,8 +517,61 @@ async function main() {
 
     renderPtrPtr = mod._malloc(4);
     renderSizePtr = mod._malloc(4);
+    searchPtrPtr = mod._malloc(4);
+    searchSizePtr = mod._malloc(4);
     assert.notEqual(renderPtrPtr, 0, 'render out pointer malloc failed');
     assert.notEqual(renderSizePtr, 0, 'render out size malloc failed');
+    assert.notEqual(searchPtrPtr, 0, 'search out pointer malloc failed');
+    assert.notEqual(searchSizePtr, 0, 'search out size malloc failed');
+
+    const invalidSearchPtr = invalidTextPtr;
+    const invalidSearch = mod.ccall(
+      'wasm_pdf_search_page_text',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, invalidSearchPtr, 0, searchPtrPtr, searchSizePtr]
+    );
+    assert.equal(invalidSearch, 0, 'malformed UTF-8 search should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 15, 'malformed search should report invalid UTF-8');
+
+    const foundText = mod.ccall(
+      'wasm_pdf_search_page_text',
+      'number',
+      ['number', 'number', 'string', 'number', 'number', 'number'],
+      [reopened, 0, 'Smoke', 0, searchPtrPtr, searchSizePtr]
+    );
+    assert.equal(foundText, 1, 'search page text should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'search page text should clear last error');
+    searchPtr = mod.getValue(searchPtrPtr, 'i32');
+    const searchSize = mod.getValue(searchSizePtr, 'i32');
+    assert.ok(searchSize >= 48, 'search result should contain match header and at least one rect');
+    const searchView = new DataView(mod.HEAPU8.buffer, searchPtr, searchSize);
+    assert.equal(searchView.getUint32(0, true), 1, 'search should find one Smoke match');
+    assert.ok(searchView.getInt32(4, true) >= 0, 'search match start index should be non-negative');
+    assert.equal(searchView.getInt32(8, true), 5, 'search match length should match query length');
+    assert.ok(searchView.getUint32(12, true) >= 1, 'search match should include at least one rectangle');
+    const searchLeft = searchView.getFloat64(16, true);
+    const searchBottom = searchView.getFloat64(24, true);
+    const searchRight = searchView.getFloat64(32, true);
+    const searchTop = searchView.getFloat64(40, true);
+    assert.ok(searchRight > searchLeft, 'search rectangle should have width');
+    assert.ok(searchTop > searchBottom, 'search rectangle should have height');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
+    searchPtr = 0;
+
+    const missingText = mod.ccall(
+      'wasm_pdf_search_page_text',
+      'number',
+      ['number', 'number', 'string', 'number', 'number', 'number'],
+      [reopened, 0, 'not-present-in-fixture', 0, searchPtrPtr, searchSizePtr]
+    );
+    assert.equal(missingText, 1, 'missing text search should still succeed');
+    searchPtr = mod.getValue(searchPtrPtr, 'i32');
+    const missingSearchSize = mod.getValue(searchSizePtr, 'i32');
+    assert.equal(missingSearchSize, 4, 'missing search result should only include match count');
+    assert.equal(new DataView(mod.HEAPU8.buffer, searchPtr, missingSearchSize).getUint32(0, true), 0, 'missing search should return zero matches');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
+    searchPtr = 0;
 
     const invalidRender = mod.ccall(
       'wasm_pdf_render_page_rgba',
@@ -589,6 +645,7 @@ async function main() {
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
   } finally {
+    if (searchPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
     if (renderPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     if (textPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);
     if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
@@ -606,6 +663,8 @@ async function main() {
     if (topPtr) mod._free(topPtr);
     if (metadataPtrPtr) mod._free(metadataPtrPtr);
     if (metadataSizePtr) mod._free(metadataSizePtr);
+    if (searchPtrPtr) mod._free(searchPtrPtr);
+    if (searchSizePtr) mod._free(searchSizePtr);
     if (renderPtrPtr) mod._free(renderPtrPtr);
     if (renderSizePtr) mod._free(renderSizePtr);
     if (inputPtr) mod._free(inputPtr);

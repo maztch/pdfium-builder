@@ -68,6 +68,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_PAGE_OBJECT_BOUNDS_FAILED = 38,
   WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED = 39,
   WASM_PDF_ERROR_PAGE_OBJECT_TRANSFORM_FAILED = 40,
+  WASM_PDF_ERROR_TEXT_SEARCH_FAILED = 41,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -196,6 +197,28 @@ bool CopyVectorToMalloc(const std::vector<uint8_t>& data,
                         uint8_t** out_ptr,
                         uint32_t* out_size) {
   return CopyBytesToMalloc(data.data(), data.size(), out_ptr, out_size);
+}
+
+void AppendInt32(std::vector<uint8_t>* data, int32_t value) {
+  const auto unsigned_value = static_cast<uint32_t>(value);
+  data->push_back(static_cast<uint8_t>(unsigned_value & 0xFF));
+  data->push_back(static_cast<uint8_t>((unsigned_value >> 8) & 0xFF));
+  data->push_back(static_cast<uint8_t>((unsigned_value >> 16) & 0xFF));
+  data->push_back(static_cast<uint8_t>((unsigned_value >> 24) & 0xFF));
+}
+
+void AppendUint32(std::vector<uint8_t>* data, uint32_t value) {
+  data->push_back(static_cast<uint8_t>(value & 0xFF));
+  data->push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+  data->push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
+  data->push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+}
+
+void AppendDouble(std::vector<uint8_t>* data, double value) {
+  static_assert(sizeof(double) == 8, "Unexpected double size");
+  uint8_t bytes[sizeof(double)];
+  memcpy(bytes, &value, sizeof(double));
+  data->insert(data->end(), bytes, bytes + sizeof(double));
 }
 
 bool IsAllowedMetadataKey(const char* key) {
@@ -809,6 +832,126 @@ int wasm_pdf_get_page_text(uintptr_t handle,
   const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
   const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
   if (!CopyBytesToMalloc(utf8_data, utf8.GetLength(), out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_search_page_text(uintptr_t handle,
+                              int page_index,
+                              const char* query_utf8,
+                              int flags,
+                              uint8_t** out_ptr,
+                              uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!query_utf8 || !query_utf8[0] || flags < 0 || !out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  std::u16string query_utf16;
+  if (!DecodeUtf8ToUtf16(query_utf8, &query_utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (!text_page) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_LOAD_TEXT_PAGE_FAILED);
+    return 0;
+  }
+
+  FPDF_SCHHANDLE search =
+      FPDFText_FindStart(text_page,
+                         reinterpret_cast<const unsigned short*>(query_utf16.c_str()),
+                         static_cast<unsigned long>(flags),
+                         0);
+  if (!search) {
+    FPDFText_ClosePage(text_page);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+    return 0;
+  }
+
+  std::vector<uint8_t> result;
+  AppendUint32(&result, 0);
+  uint32_t match_count = 0;
+
+  while (FPDFText_FindNext(search)) {
+    const int start_index = FPDFText_GetSchResultIndex(search);
+    const int char_count = FPDFText_GetSchCount(search);
+    if (start_index < 0 || char_count <= 0) {
+      FPDFText_FindClose(search);
+      FPDFText_ClosePage(text_page);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+      return 0;
+    }
+
+    const int rect_count = FPDFText_CountRects(text_page, start_index, char_count);
+    if (rect_count < 0) {
+      FPDFText_FindClose(search);
+      FPDFText_ClosePage(text_page);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+      return 0;
+    }
+
+    AppendInt32(&result, start_index);
+    AppendInt32(&result, char_count);
+    AppendUint32(&result, static_cast<uint32_t>(rect_count));
+    for (int i = 0; i < rect_count; ++i) {
+      double left = 0;
+      double top = 0;
+      double right = 0;
+      double bottom = 0;
+      if (!FPDFText_GetRect(text_page, i, &left, &top, &right, &bottom)) {
+        FPDFText_FindClose(search);
+        FPDFText_ClosePage(text_page);
+        FPDF_ClosePage(page);
+        SetLastError(WASM_PDF_ERROR_TEXT_SEARCH_FAILED);
+        return 0;
+      }
+      AppendDouble(&result, left);
+      AppendDouble(&result, bottom);
+      AppendDouble(&result, right);
+      AppendDouble(&result, top);
+    }
+
+    ++match_count;
+  }
+
+  FPDFText_FindClose(search);
+  FPDFText_ClosePage(text_page);
+  FPDF_ClosePage(page);
+
+  result[0] = static_cast<uint8_t>(match_count & 0xFF);
+  result[1] = static_cast<uint8_t>((match_count >> 8) & 0xFF);
+  result[2] = static_cast<uint8_t>((match_count >> 16) & 0xFF);
+  result[3] = static_cast<uint8_t>((match_count >> 24) & 0xFF);
+
+  if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
     return 0;
   }
 

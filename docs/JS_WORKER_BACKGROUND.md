@@ -121,11 +121,27 @@ For object selection UIs, use `queryPageObjects` and `deletePageObject`:
 }
 ```
 
-Use `transformPageObject` to move, scale, rotate, or shear a selected object:
+Use `searchPageText` to find text and get PDF user-space rectangles for highlights:
 
 ```js
 {
   id: "request-7",
+  type: "searchPageText",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    query: "invoice",
+    flags: 0,
+    password: ""
+  }
+}
+```
+
+Use `transformPageObject` to move, scale, rotate, or shear a selected object:
+
+```js
+{
+  id: "request-8",
   type: "transformPageObject",
   payload: {
     pdfBytes: inputBytes.buffer,
@@ -285,9 +301,22 @@ worker.postMessage(
 );
 ```
 
+Text search responses return match indexes and one or more rectangles per match:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "searchPageText",
+    payload: { pdfBytes: inputBytes.buffer, pageIndex: 0, query: "invoice", flags: 0 },
+  },
+  [inputBytes.buffer]
+);
+```
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, `renderPageArea`, `queryPageObjects`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 
