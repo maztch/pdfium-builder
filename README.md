@@ -67,6 +67,7 @@ The test creates a minimal one-page PDF in memory, opens it through the WASM wra
 ## Exported wrapper functions
 
 From `wasm/pdfium_edit_wrapper.cc`:
+- `wasm_pdf_last_error()`
 - `wasm_pdfium_init()`
 - `wasm_pdfium_destroy()`
 - `wasm_pdf_open_from_bytes(dataPtr, size, password)`
@@ -74,6 +75,30 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)`
 - `wasm_pdf_free_buffer(ptr)`
 - `wasm_pdf_close(handle)`
+
+`wasm_pdf_last_error()` returns a numeric code from this wrapper enum:
+
+- `0`: none
+- `1`: not initialized
+- `2`: invalid argument
+- `3`: out of memory
+- `4`: load document failed
+- `5`: invalid handle
+- `6`: load page failed
+- `7`: create text failed
+- `8`: set text failed
+- `9`: set color failed
+- `10`: insert object failed
+- `11`: generate content failed
+- `12`: save failed
+- `13`: write failed
+- `14`: output too large
+- `20`: PDFium unknown error
+- `21`: PDFium file error
+- `22`: PDFium format error
+- `23`: PDFium password error
+- `24`: PDFium security error
+- `25`: PDFium page error
 
 ## Browser usage flow
 

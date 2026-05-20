@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -13,12 +14,73 @@
 
 namespace {
 
+enum WasmPdfError : int {
+  WASM_PDF_ERROR_NONE = 0,
+  WASM_PDF_ERROR_NOT_INITIALIZED = 1,
+  WASM_PDF_ERROR_INVALID_ARGUMENT = 2,
+  WASM_PDF_ERROR_OUT_OF_MEMORY = 3,
+  WASM_PDF_ERROR_LOAD_DOCUMENT_FAILED = 4,
+  WASM_PDF_ERROR_INVALID_HANDLE = 5,
+  WASM_PDF_ERROR_LOAD_PAGE_FAILED = 6,
+  WASM_PDF_ERROR_CREATE_TEXT_FAILED = 7,
+  WASM_PDF_ERROR_SET_TEXT_FAILED = 8,
+  WASM_PDF_ERROR_SET_COLOR_FAILED = 9,
+  WASM_PDF_ERROR_INSERT_OBJECT_FAILED = 10,
+  WASM_PDF_ERROR_GENERATE_CONTENT_FAILED = 11,
+  WASM_PDF_ERROR_SAVE_FAILED = 12,
+  WASM_PDF_ERROR_WRITE_FAILED = 13,
+  WASM_PDF_ERROR_OUTPUT_TOO_LARGE = 14,
+  WASM_PDF_ERROR_PDFIUM_UNKNOWN = 20,
+  WASM_PDF_ERROR_PDFIUM_FILE = 21,
+  WASM_PDF_ERROR_PDFIUM_FORMAT = 22,
+  WASM_PDF_ERROR_PDFIUM_PASSWORD = 23,
+  WASM_PDF_ERROR_PDFIUM_SECURITY = 24,
+  WASM_PDF_ERROR_PDFIUM_PAGE = 25,
+};
+
+int g_last_error = WASM_PDF_ERROR_NONE;
+
+void SetLastError(WasmPdfError error) {
+  g_last_error = error;
+}
+
+void ClearLastError() {
+  SetLastError(WASM_PDF_ERROR_NONE);
+}
+
+WasmPdfError PdfiumLastErrorToWasmError(WasmPdfError fallback) {
+  switch (FPDF_GetLastError()) {
+    case FPDF_ERR_SUCCESS:
+      return fallback;
+    case FPDF_ERR_UNKNOWN:
+      return WASM_PDF_ERROR_PDFIUM_UNKNOWN;
+    case FPDF_ERR_FILE:
+      return WASM_PDF_ERROR_PDFIUM_FILE;
+    case FPDF_ERR_FORMAT:
+      return WASM_PDF_ERROR_PDFIUM_FORMAT;
+    case FPDF_ERR_PASSWORD:
+      return WASM_PDF_ERROR_PDFIUM_PASSWORD;
+    case FPDF_ERR_SECURITY:
+      return WASM_PDF_ERROR_PDFIUM_SECURITY;
+    case FPDF_ERR_PAGE:
+      return WASM_PDF_ERROR_PDFIUM_PAGE;
+    default:
+      return fallback;
+  }
+}
+
 struct MemWriter {
   FPDF_FILEWRITE filewrite;
   std::vector<uint8_t> data;
 };
 
 int MemWriteBlock(FPDF_FILEWRITE* pThis, const void* data, unsigned long size) {
+  if (!pThis || (!data && size > 0)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+  if (size == 0) return 1;
+
   auto* writer = reinterpret_cast<MemWriter*>(pThis);
   const auto* bytes = reinterpret_cast<const uint8_t*>(data);
   writer->data.insert(writer->data.end(), bytes, bytes + size);
@@ -37,8 +99,15 @@ bool g_pdfium_initialized = false;
 
 extern "C" {
 
+int wasm_pdf_last_error() {
+  return g_last_error;
+}
+
 int wasm_pdfium_init() {
-  if (g_pdfium_initialized) return 1;
+  if (g_pdfium_initialized) {
+    ClearLastError();
+    return 1;
+  }
 
   FPDF_LIBRARY_CONFIG config;
   memset(&config, 0, sizeof(config));
@@ -49,11 +118,15 @@ int wasm_pdfium_init() {
 
   FPDF_InitLibraryWithConfig(&config);
   g_pdfium_initialized = true;
+  ClearLastError();
   return 1;
 }
 
 void wasm_pdfium_destroy() {
-  if (!g_pdfium_initialized) return;
+  if (!g_pdfium_initialized) {
+    ClearLastError();
+    return;
+  }
 
   for (auto& kv : g_docs) {
     if (kv.second && kv.second->doc) {
@@ -65,12 +138,20 @@ void wasm_pdfium_destroy() {
 
   FPDF_DestroyLibrary();
   g_pdfium_initialized = false;
+  ClearLastError();
 }
 
 uintptr_t wasm_pdf_open_from_bytes(const uint8_t* data,
                                    uint32_t size,
                                    const char* password) {
-  if (!g_pdfium_initialized || !data || size == 0) return 0;
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!data || size == 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
 
   auto state = std::make_unique<DocumentState>();
   state->source.assign(data, data + size);
@@ -78,16 +159,23 @@ uintptr_t wasm_pdf_open_from_bytes(const uint8_t* data,
   state->doc =
       FPDF_LoadMemDocument(state->source.data(), static_cast<int>(state->source.size()),
                            password && password[0] ? password : nullptr);
-  if (!state->doc) return 0;
+  if (!state->doc) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_DOCUMENT_FAILED));
+    return 0;
+  }
 
   uintptr_t handle = reinterpret_cast<uintptr_t>(state.get());
   g_docs.emplace(handle, std::move(state));
+  ClearLastError();
   return handle;
 }
 
 void wasm_pdf_close(uintptr_t handle) {
   auto it = g_docs.find(handle);
-  if (it == g_docs.end()) return;
+  if (it == g_docs.end()) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return;
+  }
 
   if (it->second->doc) {
     FPDF_CloseDocument(it->second->doc);
@@ -95,6 +183,7 @@ void wasm_pdf_close(uintptr_t handle) {
   }
 
   g_docs.erase(it);
+  ClearLastError();
 }
 
 int wasm_pdf_add_text_page(uintptr_t handle,
@@ -104,18 +193,32 @@ int wasm_pdf_add_text_page(uintptr_t handle,
                            double y,
                            double font_size,
                            uint32_t rgba) {
-  if (!text_utf8) return 0;
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!text_utf8) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
 
   auto it = g_docs.find(handle);
-  if (it == g_docs.end() || !it->second->doc) return 0;
+  if (it == g_docs.end() || !it->second->doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
 
   FPDF_DOCUMENT doc = it->second->doc;
   FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
-  if (!page) return 0;
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
 
   FPDF_PAGEOBJECT text_obj = FPDFPageObj_NewTextObj(doc, "Helvetica", static_cast<float>(font_size));
   if (!text_obj) {
     FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_TEXT_FAILED);
     return 0;
   }
 
@@ -134,6 +237,7 @@ int wasm_pdf_add_text_page(uintptr_t handle,
   if (!FPDFText_SetText(text_obj, reinterpret_cast<const unsigned short*>(utf16.c_str()))) {
     FPDFPageObj_Destroy(text_obj);
     FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_TEXT_FAILED);
     return 0;
   }
 
@@ -145,6 +249,7 @@ int wasm_pdf_add_text_page(uintptr_t handle,
   if (!FPDFPageObj_SetFillColor(text_obj, r, g, b, a)) {
     FPDFPageObj_Destroy(text_obj);
     FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_COLOR_FAILED);
     return 0;
   }
 
@@ -153,41 +258,75 @@ int wasm_pdf_add_text_page(uintptr_t handle,
   if (!FPDFPage_InsertObject(page, text_obj)) {
     FPDFPageObj_Destroy(text_obj);
     FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
     return 0;
   }
 
-  FPDFPage_GenerateContent(page);
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return 0;
+  }
+
   FPDF_ClosePage(page);
+  ClearLastError();
   return 1;
 }
 
 int wasm_pdf_save_copy(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_size) {
-  if (!out_ptr || !out_size) return 0;
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
 
   auto it = g_docs.find(handle);
-  if (it == g_docs.end() || !it->second->doc) return 0;
+  if (it == g_docs.end() || !it->second->doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
 
   MemWriter writer{};
   writer.filewrite.version = 1;
   writer.filewrite.WriteBlock = MemWriteBlock;
 
   if (!FPDF_SaveAsCopy(it->second->doc, &writer.filewrite, FPDF_NO_INCREMENTAL)) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_SAVE_FAILED));
+    return 0;
+  }
+
+  if (writer.data.size() > std::numeric_limits<uint32_t>::max()) {
+    SetLastError(WASM_PDF_ERROR_OUTPUT_TOO_LARGE);
     return 0;
   }
 
   uint8_t* buffer = reinterpret_cast<uint8_t*>(malloc(writer.data.size()));
-  if (!buffer) return 0;
+  if (!buffer) {
+    SetLastError(WASM_PDF_ERROR_OUT_OF_MEMORY);
+    return 0;
+  }
 
   memcpy(buffer, writer.data.data(), writer.data.size());
 
   *out_ptr = buffer;
   *out_size = static_cast<uint32_t>(writer.data.size());
+  ClearLastError();
   return 1;
 }
 
 void wasm_pdf_free_buffer(uint8_t* ptr) {
-  if (!ptr) return;
+  if (!ptr) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return;
+  }
   free(ptr);
+  ClearLastError();
 }
 
 }  // extern "C"

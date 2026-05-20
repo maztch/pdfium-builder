@@ -50,6 +50,16 @@ async function main() {
   try {
     assert.equal(mod.ccall('wasm_pdfium_init', 'number', [], []), 1, 'PDFium init failed');
     initialized = true;
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'init should clear last error');
+
+    const invalidOpen = mod.ccall(
+      'wasm_pdf_open_from_bytes',
+      'number',
+      ['number', 'number', 'string'],
+      [0, 0, '']
+    );
+    assert.equal(invalidOpen, 0, 'invalid open should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid open should report invalid argument');
 
     inputPtr = mod._malloc(inputBytes.length);
     assert.notEqual(inputPtr, 0, 'input malloc failed');
@@ -62,6 +72,7 @@ async function main() {
       [inputPtr, inputBytes.length, '']
     );
     assert.notEqual(handle, 0, 'open input PDF failed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'successful open should clear last error');
 
     const added = mod.ccall(
       'wasm_pdf_add_text_page',
