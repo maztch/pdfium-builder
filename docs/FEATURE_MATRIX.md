@@ -33,7 +33,7 @@ Status legend:
 | Embedded attachment list/read | `wasm_pdf_attachment_count`, `wasm_pdf_get_attachment_info`, `wasm_pdf_get_attachment_file` | `queryAttachments`, `readAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#queryattachments) | Stable | Supports document-level embedded files. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
-| Annotation count | `wasm_pdf_annotation_count` | No | Yes | [API](API.md#annotations) | Partial | Worker can add/update but not list annotations. |
+| Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Worker returns subtype, flags, rect, color, border, contents, URI, and quadpoints. |
 | Page object count/info | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Used for object selection UIs. |
 
 ## Page Mutations
@@ -74,8 +74,8 @@ Status legend:
 | Update annotation color | `wasm_pdf_set_annotation_color` | `updateAnnotation` with `color` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Updates stroke/markup color. |
 | Update annotation text | `wasm_pdf_set_annotation_text` | `updateAnnotation` with `text` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Contents must be valid UTF-8. |
 | Update link URI | `wasm_pdf_set_annotation_uri` | `updateAnnotation` with `uri` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | URI must be non-empty 7-bit ASCII. |
-| Enumerate annotation details | Planned | No | No | [Roadmap](IMPROVEMENTS_ROADMAP.md) | Planned | Count exists; subtype/rect/content enumeration is not exposed yet. |
-| Delete annotation | Planned | No | No | [Roadmap](IMPROVEMENTS_ROADMAP.md) | Planned | Page-object deletion does not delete annotations. |
+| Enumerate annotation details | `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Returns subtype, flags, rectangle, color, border width, contents, URI, and quadpoints. |
+| Delete annotation | `wasm_pdf_delete_annotation` | `deleteAnnotation` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#deleteannotation) | Stable | Annotation indices are separate from page object indices. |
 
 ## Rendering
 
@@ -107,6 +107,8 @@ Status legend:
 | `addImage` | Add RGBA, JPEG, or PNG image page object | Saved PDF bytes | Stable | Use `rgbaBytes` for RGBA or `imageFormat` plus `imageBytes` for JPEG/PNG. |
 | `addAnnotation` | Highlight, link, text note, rectangle, FreeText | Saved PDF bytes | Stable | Uses `annotationType`. |
 | `updateAnnotation` | Rect, color, text, URI | Saved PDF bytes | Stable | Uses `updateType`. |
+| `queryAnnotations` | Annotation count/details | Annotation array | Stable | Read-only. |
+| `deleteAnnotation` | Delete one annotation | Saved PDF bytes | Stable | Uses zero-based annotation index. |
 | `renderPage` | Full-page rendering | RGBA bytes, width, height | Stable | Accepts render flags. |
 | `renderPageArea` | Area rendering | RGBA bytes, width, height | Stable | Accepts PDF-space rectangle. |
 | `queryDocument` | Page count, metadata, permissions, page geometry, outline and attachment summaries | Document summary payload | Stable | Preferred one-call document summary. |

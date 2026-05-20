@@ -170,6 +170,33 @@ Use `updateAnnotation` to change an existing annotation:
 }
 ```
 
+Use `queryAnnotations` and `deleteAnnotation` to inspect or remove existing annotations:
+
+```js
+{
+  id: "request-query-annotations",
+  type: "queryAnnotations",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-delete-annotation",
+  type: "deleteAnnotation",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    annotationIndex: 0,
+    password: ""
+  }
+}
+```
+
 For object selection UIs, use `queryPageObjects` and `deletePageObject`:
 
 ```js

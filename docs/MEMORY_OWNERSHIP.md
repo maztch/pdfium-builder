@@ -8,7 +8,7 @@ This document defines who owns native handles, native pointers, and JS buffers.
 |---|---|---|---|
 | Input buffer pointer | JS via `_malloc` | JS via `_free` | Copy PDF/image bytes into `HEAPU8` before calling native APIs. |
 | Document handle | `wasm_pdf_open_from_bytes` | `wasm_pdf_close` | Always close in `finally`. |
-| Output buffer pointer | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Applies to save, metadata, outline, attachment, text, search, and render outputs. |
+| Output buffer pointer | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Applies to save, metadata, outline, attachment, annotation info, text, search, and render outputs. |
 | Pointer-to-pointer slots | JS via `_malloc(4)` | JS via `_free` | Used for output pointer and output size. |
 | Render output bytes | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Copy with `HEAPU8.slice` if data must survive memory growth/free. |
 
@@ -21,6 +21,7 @@ This document defines who owns native handles, native pointers, and JS buffers.
 | `wasm_pdf_get_outline(handle, outPtrPtr, outSizePtr)` | Binary outline result buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_attachment_info(handle, attachmentIndex, outPtrPtr, outSizePtr)` | Binary attachment info buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_attachment_file(handle, attachmentIndex, outPtrPtr, outSizePtr)` | Attachment file bytes | `wasm_pdf_free_buffer(outPtr)` |
+| `wasm_pdf_get_annotation_info(handle, pageIndex, annotationIndex, outPtrPtr, outSizePtr)` | Binary annotation info buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` | UTF-8 bytes | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)` | Binary search result buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_render_page_rgba(handle, pageIndex, width, height, flags, outPtrPtr, outSizePtr)` | RGBA bytes | `wasm_pdf_free_buffer(outPtr)` |
@@ -34,7 +35,7 @@ Most mutation/query APIs return scalar values and do not allocate caller-owned o
 - Attachment count.
 - Page insert/delete/copy/import.
 - Text/image/attachment insertion.
-- Annotation creation/update.
+- Annotation creation/update/delete and annotation count.
 - Page object count/info/delete/transform.
 
 If a function writes into caller-provided scalar pointers, the caller owns those scalar pointer slots and frees them with `_free`.

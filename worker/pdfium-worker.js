@@ -57,6 +57,8 @@ const ERROR_NAMES = Object.freeze({
   53: "add_attachment_failed",
   54: "attachment_read_failed",
   55: "attachment_write_failed",
+  56: "annotation_read_failed",
+  57: "annotation_delete_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -269,6 +271,77 @@ function parseAttachmentInfo(bytes, index) {
     name,
     mimeType: mimeType || null,
     fileSize,
+  };
+}
+
+function parseAnnotationInfo(bytes, index) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder("utf-8");
+  let offset = 0;
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  const subtype = readInt32();
+  const flags = readInt32();
+  const rect = {
+    left: readDouble(),
+    bottom: readDouble(),
+    right: readDouble(),
+    top: readDouble(),
+  };
+  const hasColor = readInt32() !== 0;
+  const colorRgba = readInt32();
+  const borderWidth = readDouble();
+  const contents = readString();
+  const uri = readString();
+  const quadCount = readUint32();
+  const quadPoints = [];
+  for (let quadIndex = 0; quadIndex < quadCount; quadIndex += 1) {
+    quadPoints.push({
+      x1: readDouble(),
+      y1: readDouble(),
+      x2: readDouble(),
+      y2: readDouble(),
+      x3: readDouble(),
+      y3: readDouble(),
+      x4: readDouble(),
+      y4: readDouble(),
+    });
+  }
+
+  return {
+    index,
+    subtype,
+    flags,
+    rect,
+    colorRgba: hasColor ? colorRgba >>> 0 : null,
+    borderWidth: borderWidth >= 0 ? borderWidth : null,
+    contents: contents || null,
+    uri: uri || null,
+    quadPoints,
   };
 }
 
@@ -689,6 +762,124 @@ async function updateAnnotation(payload = {}) {
     }
 
     if (!updated) throwPdfiumError(mod, "Unable to update annotation");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
+async function queryAnnotations(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!inputPtr || !outPtrPtr || !outSizePtr) {
+      throw new PdfiumWorkerError("Unable to allocate annotation query buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const pageIndex = numberOrDefault(payload.pageIndex, 0);
+    const count = mod.ccall("wasm_pdf_annotation_count", "number", ["number", "number"], [handle, pageIndex]);
+    if (count < 0) throwPdfiumError(mod, "Unable to count annotations");
+
+    const annotations = [];
+    for (let index = 0; index < count; index += 1) {
+      const queried = mod.ccall(
+        "wasm_pdf_get_annotation_info",
+        "number",
+        ["number", "number", "number", "number", "number"],
+        [handle, pageIndex, index, outPtrPtr, outSizePtr]
+      );
+      if (!queried) throwPdfiumError(mod, "Unable to query annotation info");
+
+      outPtr = mod.getValue(outPtrPtr, "i32");
+      const outSize = mod.getValue(outSizePtr, "i32");
+      if (!outPtr || outSize < 64) throw new PdfiumWorkerError("Annotation info output is invalid", 56);
+
+      annotations.push(parseAnnotationInfo(mod.HEAPU8.slice(outPtr, outPtr + outSize), index));
+      mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+      outPtr = 0;
+    }
+
+    return { annotations };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
+async function deleteAnnotation(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const deleted = mod.ccall(
+      "wasm_pdf_delete_annotation",
+      "number",
+      ["number", "number", "number"],
+      [handle, numberOrDefault(payload.pageIndex, 0), numberOrDefault(payload.annotationIndex, -1)]
+    );
+    if (!deleted) throwPdfiumError(mod, "Unable to delete annotation");
 
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
@@ -1524,6 +1715,12 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "updateAnnotation") {
     return updateAnnotation(message.payload);
+  }
+  if (message.type === "queryAnnotations") {
+    return queryAnnotations(message.payload);
+  }
+  if (message.type === "deleteAnnotation") {
+    return deleteAnnotation(message.payload);
   }
   if (message.type === "renderPage") {
     return renderPage(message.payload);

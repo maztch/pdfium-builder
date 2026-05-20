@@ -129,6 +129,38 @@ const result = await requestPdfWorker(
 );
 ```
 
+## List And Delete Annotations
+
+```js
+const queryBytes = inputBytes.slice();
+const { annotations } = await requestPdfWorker(
+  worker,
+  "queryAnnotations",
+  {
+    pdfBytes: queryBytes.buffer,
+    pageIndex: 0,
+  },
+  [queryBytes.buffer]
+);
+
+const firstLink = annotations.find((annotation) => annotation.subtype === 2);
+if (firstLink) {
+  const editBytes = inputBytes.slice();
+  const result = await requestPdfWorker(
+    worker,
+    "deleteAnnotation",
+    {
+      pdfBytes: editBytes.buffer,
+      pageIndex: 0,
+      annotationIndex: firstLink.index,
+    },
+    [editBytes.buffer]
+  );
+}
+```
+
+Annotation indices are page-local and separate from page object indices.
+
 ## Search Text And Highlight It
 
 ```js

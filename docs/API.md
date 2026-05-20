@@ -172,6 +172,8 @@ PNG support is intentionally small: non-interlaced, 8-bit grayscale, RGB, graysc
 ## Annotations
 
 - `wasm_pdf_annotation_count(handle, pageIndex)` returns annotation count, or `-1` on failure.
+- `wasm_pdf_get_annotation_info(handle, pageIndex, annotationIndex, outPtrPtr, outSizePtr)` writes a binary annotation info buffer. Release non-null output with `wasm_pdf_free_buffer`.
+- `wasm_pdf_delete_annotation(handle, pageIndex, annotationIndex)` deletes one annotation by zero-based annotation index.
 - `wasm_pdf_add_highlight_annotation(handle, pageIndex, left, bottom, right, top, rgba)` creates a highlight annotation with one quad.
 - `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)` creates a link annotation with URI action. `uri` must be non-empty 7-bit ASCII.
 - `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)` creates a text note annotation with a 20x20 icon rectangle. `contents` must be valid UTF-8.
@@ -189,6 +191,19 @@ Known helper subtypes:
 - `3`: FreeText
 - `5`: square/rectangle
 - `9`: highlight
+
+Annotation info buffer layout:
+
+- `int32 subtype`: PDFium `FPDF_ANNOT_*` subtype.
+- `int32 flags`: annotation flags.
+- `double left`, `double bottom`, `double right`, `double top`: annotation rectangle in PDF user-space.
+- `int32 hasColor`: `1` when color is available, otherwise `0`.
+- `int32 colorRgba`: `0xAARRGGBB`; meaningful only when `hasColor` is `1`.
+- `double borderWidth`: border width, or `-1` when unavailable.
+- `uint32 contentsSize`, followed by UTF-8 `Contents` bytes.
+- `uint32 uriSize`, followed by URI bytes for link annotations.
+- `uint32 quadPointCount`.
+- Per quadpoint set: `double x1`, `double y1`, `double x2`, `double y2`, `double x3`, `double y3`, `double x4`, `double y4`.
 
 FreeText appearance generation is described in [Implementation Notes](IMPLEMENTATION_NOTES.md#freetext-annotation-appearance).
 
@@ -265,3 +280,5 @@ Common render flag:
 - `53`: add attachment failed
 - `54`: attachment read failed
 - `55`: attachment write failed
+- `56`: annotation read failed
+- `57`: annotation delete failed

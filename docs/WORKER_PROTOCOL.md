@@ -138,6 +138,43 @@ Rectangle-style annotations use `left`, `bottom`, `right`, `top` in PDF user-spa
 | `text` | `contents` | `{ pdfBytes }` |
 | `uri` | `uri` | `{ pdfBytes }` |
 
+## `queryAnnotations`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ annotations }`, where each annotation has:
+
+```js
+{
+  index: 0,
+  subtype: 9,
+  flags: 4,
+  rect: { left: 72, bottom: 700, right: 260, top: 735 },
+  colorRgba: 2164260864,
+  borderWidth: null,
+  contents: null,
+  uri: null,
+  quadPoints: [{ x1, y1, x2, y2, x3, y3, x4, y4 }]
+}
+```
+
+`colorRgba`, `borderWidth`, `contents`, and `uri` are `null` when unavailable.
+
+## `deleteAnnotation`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `annotationIndex` | number | Yes | `-1` | Zero-based annotation index. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
 ## `renderPage`
 
 | Field | Type | Required | Default | Notes |

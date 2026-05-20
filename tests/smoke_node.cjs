@@ -116,6 +116,77 @@ function parseAttachmentInfo(bytes, index) {
   return { index, name, mimeType, fileSize };
 }
 
+function parseAnnotationInfo(bytes, index) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder('utf-8');
+  let offset = 0;
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
+  function readString() {
+    const size = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + size));
+    offset += size;
+    return value;
+  }
+
+  const subtype = readInt32();
+  const flags = readInt32();
+  const rect = {
+    left: readDouble(),
+    bottom: readDouble(),
+    right: readDouble(),
+    top: readDouble(),
+  };
+  const hasColor = readInt32() !== 0;
+  const colorRgba = readInt32();
+  const borderWidth = readDouble();
+  const contents = readString();
+  const uri = readString();
+  const quadCount = readUint32();
+  const quadPoints = [];
+  for (let i = 0; i < quadCount; i += 1) {
+    quadPoints.push({
+      x1: readDouble(),
+      y1: readDouble(),
+      x2: readDouble(),
+      y2: readDouble(),
+      x3: readDouble(),
+      y3: readDouble(),
+      x4: readDouble(),
+      y4: readDouble(),
+    });
+  }
+
+  return {
+    index,
+    subtype,
+    flags,
+    rect,
+    colorRgba: hasColor ? colorRgba >>> 0 : null,
+    borderWidth: borderWidth >= 0 ? borderWidth : null,
+    contents: contents || null,
+    uri: uri || null,
+    quadPoints,
+  };
+}
+
 async function main() {
   const { default: PdfiumWasm } = await import(pathToFileURL(path.join(distDir, 'pdfium.js')));
   const mod = await PdfiumWasm({
@@ -150,6 +221,9 @@ async function main() {
   let attachmentFilePtr = 0;
   let attachmentFilePtrPtr = 0;
   let attachmentFileSizePtr = 0;
+  let annotationInfoPtr = 0;
+  let annotationInfoPtrPtr = 0;
+  let annotationInfoSizePtr = 0;
   let searchPtr = 0;
   let searchPtrPtr = 0;
   let searchSizePtr = 0;
@@ -199,6 +273,8 @@ async function main() {
     attachmentInfoSizePtr = mod._malloc(4);
     attachmentFilePtrPtr = mod._malloc(4);
     attachmentFileSizePtr = mod._malloc(4);
+    annotationInfoPtrPtr = mod._malloc(4);
+    annotationInfoSizePtr = mod._malloc(4);
     assert.notEqual(metadataPtrPtr, 0, 'metadata out pointer malloc failed');
     assert.notEqual(metadataSizePtr, 0, 'metadata out size malloc failed');
     assert.notEqual(outlinePtrPtr, 0, 'outline out pointer malloc failed');
@@ -207,6 +283,8 @@ async function main() {
     assert.notEqual(attachmentInfoSizePtr, 0, 'attachment info out size malloc failed');
     assert.notEqual(attachmentFilePtrPtr, 0, 'attachment file out pointer malloc failed');
     assert.notEqual(attachmentFileSizePtr, 0, 'attachment file out size malloc failed');
+    assert.notEqual(annotationInfoPtrPtr, 0, 'annotation info out pointer malloc failed');
+    assert.notEqual(annotationInfoSizePtr, 0, 'annotation info out size malloc failed');
 
     const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
     assert.equal(pageCount, 1, 'page count should report one page');
@@ -837,6 +915,104 @@ async function main() {
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid annotation updates should clear last error');
     assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 5, 'annotation updates should not change annotation count');
 
+    const gotHighlightInfo = mod.ccall(
+      'wasm_pdf_get_annotation_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 0, annotationInfoPtrPtr, annotationInfoSizePtr]
+    );
+    assert.equal(gotHighlightInfo, 1, 'highlight annotation info should be readable');
+    annotationInfoPtr = mod.getValue(annotationInfoPtrPtr, 'i32');
+    const highlightInfoSize = mod.getValue(annotationInfoSizePtr, 'i32');
+    const highlightInfo = parseAnnotationInfo(mod.HEAPU8.slice(annotationInfoPtr, annotationInfoPtr + highlightInfoSize), 0);
+    assert.equal(highlightInfo.subtype, 9, 'highlight info subtype should match');
+    assert.equal(highlightInfo.rect.left, 80, 'updated highlight left should be readable');
+    assert.equal(highlightInfo.rect.bottom, 705, 'updated highlight bottom should be readable');
+    assert.equal(highlightInfo.rect.right, 270, 'updated highlight right should be readable');
+    assert.equal(highlightInfo.rect.top, 740, 'updated highlight top should be readable');
+    assert.equal(highlightInfo.colorRgba, 0x8000ff00, 'updated highlight color should be readable');
+    assert.equal(highlightInfo.quadPoints.length, 1, 'highlight should expose one quadpoint set');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [annotationInfoPtr]);
+    annotationInfoPtr = 0;
+
+    const gotLinkInfo = mod.ccall(
+      'wasm_pdf_get_annotation_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, annotationInfoPtrPtr, annotationInfoSizePtr]
+    );
+    assert.equal(gotLinkInfo, 1, 'link annotation info should be readable');
+    annotationInfoPtr = mod.getValue(annotationInfoPtrPtr, 'i32');
+    const linkInfoSize = mod.getValue(annotationInfoSizePtr, 'i32');
+    const linkInfo = parseAnnotationInfo(mod.HEAPU8.slice(annotationInfoPtr, annotationInfoPtr + linkInfoSize), 1);
+    assert.equal(linkInfo.subtype, 2, 'link info subtype should match');
+    assert.equal(linkInfo.uri, 'https://example.org/updated', 'updated link URI should be readable');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [annotationInfoPtr]);
+    annotationInfoPtr = 0;
+
+    const gotNoteInfo = mod.ccall(
+      'wasm_pdf_get_annotation_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 2, annotationInfoPtrPtr, annotationInfoSizePtr]
+    );
+    assert.equal(gotNoteInfo, 1, 'text note annotation info should be readable');
+    annotationInfoPtr = mod.getValue(annotationInfoPtrPtr, 'i32');
+    const noteInfoSize = mod.getValue(annotationInfoSizePtr, 'i32');
+    const noteInfo = parseAnnotationInfo(mod.HEAPU8.slice(annotationInfoPtr, annotationInfoPtr + noteInfoSize), 2);
+    assert.equal(noteInfo.subtype, 1, 'text note info subtype should match');
+    assert.equal(noteInfo.contents, 'Updated note: café 中文', 'updated note text should be readable');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [annotationInfoPtr]);
+    annotationInfoPtr = 0;
+
+    let rectangleAnnotationIndex = -1;
+    let freeTextAnnotationIndex = -1;
+    for (let index = 0; index < 5; index += 1) {
+      const gotAnnotationInfo = mod.ccall(
+        'wasm_pdf_get_annotation_info',
+        'number',
+        ['number', 'number', 'number', 'number', 'number'],
+        [handle, 0, index, annotationInfoPtrPtr, annotationInfoSizePtr]
+      );
+      assert.equal(gotAnnotationInfo, 1, `annotation ${index} info should be readable`);
+      annotationInfoPtr = mod.getValue(annotationInfoPtrPtr, 'i32');
+      const annotationInfoSize = mod.getValue(annotationInfoSizePtr, 'i32');
+      const annotationInfo = parseAnnotationInfo(mod.HEAPU8.slice(annotationInfoPtr, annotationInfoPtr + annotationInfoSize), index);
+      if (annotationInfo.subtype === 5) rectangleAnnotationIndex = index;
+      if (annotationInfo.subtype === 3) freeTextAnnotationIndex = index;
+      mod.ccall('wasm_pdf_free_buffer', null, ['number'], [annotationInfoPtr]);
+      annotationInfoPtr = 0;
+    }
+    assert.notEqual(rectangleAnnotationIndex, -1, 'rectangle annotation should be discoverable by subtype');
+    assert.notEqual(freeTextAnnotationIndex, -1, 'FreeText annotation should remain discoverable before deletion');
+
+    const invalidAnnotationInfo = mod.ccall(
+      'wasm_pdf_get_annotation_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 99, annotationInfoPtrPtr, annotationInfoSizePtr]
+    );
+    assert.equal(invalidAnnotationInfo, 0, 'invalid annotation info index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid annotation info index should report invalid argument');
+
+    const deletedAnnotation = mod.ccall(
+      'wasm_pdf_delete_annotation',
+      'number',
+      ['number', 'number', 'number'],
+      [handle, 0, 0]
+    );
+    assert.equal(deletedAnnotation, 1, 'delete annotation should succeed');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 4, 'delete annotation should remove one annotation');
+
+    const invalidAnnotationDelete = mod.ccall(
+      'wasm_pdf_delete_annotation',
+      'number',
+      ['number', 'number', 'number'],
+      [handle, 0, 99]
+    );
+    assert.equal(invalidAnnotationDelete, 0, 'invalid annotation delete index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid annotation delete index should report invalid argument');
+
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
     assert.notEqual(outPtrPtr, 0, 'out pointer malloc failed');
@@ -867,7 +1043,7 @@ async function main() {
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
     assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 3, 'saved PDF should persist deleted object state');
-    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 5, 'saved PDF should persist annotations');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 4, 'saved PDF should persist deleted annotation state');
     assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
     assert.equal(mod.ccall(
       'wasm_pdf_get_page_box',
@@ -1089,6 +1265,7 @@ async function main() {
     if (outlinePtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outlinePtr]);
     if (attachmentInfoPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentInfoPtr]);
     if (attachmentFilePtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
+    if (annotationInfoPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [annotationInfoPtr]);
     if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);
@@ -1113,6 +1290,8 @@ async function main() {
     if (attachmentInfoSizePtr) mod._free(attachmentInfoSizePtr);
     if (attachmentFilePtrPtr) mod._free(attachmentFilePtrPtr);
     if (attachmentFileSizePtr) mod._free(attachmentFileSizePtr);
+    if (annotationInfoPtrPtr) mod._free(annotationInfoPtrPtr);
+    if (annotationInfoSizePtr) mod._free(annotationInfoSizePtr);
     if (searchPtrPtr) mod._free(searchPtrPtr);
     if (searchSizePtr) mod._free(searchSizePtr);
     if (renderPtrPtr) mod._free(renderPtrPtr);
