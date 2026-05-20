@@ -278,6 +278,7 @@ function parseFormFields(bytes) {
         },
         checked: readInt32() !== 0,
         defaultChecked: readInt32() !== 0,
+        hasAppearance: readInt32() !== 0,
         exportValue: readString(),
         onStateName: readString(),
       });

@@ -344,6 +344,7 @@ function parseFormFields(bytes) {
         },
         checked: readInt32() !== 0,
         defaultChecked: readInt32() !== 0,
+        hasAppearance: readInt32() !== 0,
         exportValue: readString(),
         onStateName: readString(),
       });
@@ -422,6 +423,7 @@ async function main() {
       assert.equal(textField.defaultValue, 'Default Value', 'direct API form default value should be readable');
       assert.deepEqual(textField.widgets[0].rect, { left: 72, bottom: 700, right: 280, top: 730 }, 'direct API form widget rect should be readable');
       assert.equal(textField.widgets[0].pageIndex, 0, 'direct API form widget page index should be readable');
+      assert.equal(textField.widgets[0].hasAppearance, false, 'direct API text field should start without appearance');
       assert.equal(checkbox.type, 2, 'direct API checkbox type should be readable');
       assert.equal(checkbox.widgets[0].checked, false, 'direct API checkbox initial state should be readable');
       assert.equal(radio.type, 3, 'direct API radio type should be readable');
@@ -433,6 +435,7 @@ async function main() {
       assert.equal(updatedFields.find((field) => field.name === 'customer.name').value, 'Updated café 中文', 'direct API form value should update');
       assert.equal(updatedFields.find((field) => field.name === 'agree').widgets[0].checked, true, 'direct API checkbox should update');
       assert.equal(updatedFields.find((field) => field.name === 'choice').widgets[1].checked, true, 'direct API radio should update');
+      assert.equal(updatedFields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'direct API form value update should generate an appearance');
       return doc.save();
     });
     assert.equal(Buffer.from(directFormOutput.subarray(0, 5)).toString('ascii'), '%PDF-', 'direct API form save should return PDF bytes');
@@ -440,6 +443,7 @@ async function main() {
     await directApi.withDocument(directFormOutput, (doc) => {
       const fields = doc.formFields();
       assert.equal(fields.find((field) => field.name === 'customer.name').value, 'Updated café 中文', 'direct API form value should persist after reopen');
+      assert.equal(fields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'direct API form appearance should persist after reopen');
       assert.equal(fields.find((field) => field.name === 'agree').widgets[0].checked, true, 'direct API checkbox should persist after reopen');
       assert.equal(fields.find((field) => field.name === 'choice').widgets[1].checked, true, 'direct API radio should persist after reopen');
     });
@@ -575,6 +579,7 @@ async function main() {
     assert.equal(nativeTextField.value, 'Initial Value', 'form field value should be readable');
     assert.deepEqual(nativeTextField.widgets[0].rect, { left: 72, bottom: 700, right: 280, top: 730 }, 'form widget rect should be readable');
     assert.equal(nativeTextField.widgets[0].pageIndex, 0, 'form widget page index should be readable');
+    assert.equal(nativeTextField.widgets[0].hasAppearance, false, 'text field should start without an appearance');
     assert.equal(nativeCheckbox.type, 2, 'checkbox type should be readable');
     assert.equal(nativeCheckbox.widgets[0].checked, false, 'checkbox state should be readable');
     assert.equal(nativeRadio.type, 3, 'radio type should be readable');
@@ -610,6 +615,7 @@ async function main() {
     const updatedFormFieldsSize = mod.getValue(metadataSizePtr, 'i32');
     const updatedFormFields = parseFormFields(mod.HEAPU8.slice(formFieldsPtr, formFieldsPtr + updatedFormFieldsSize));
     assert.equal(updatedFormFields.find((field) => field.name === 'customer.name').value, 'Native updated café 中文', 'updated native form value should be readable');
+    assert.equal(updatedFormFields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'updated native form value should generate an appearance');
     assert.equal(updatedFormFields.find((field) => field.name === 'agree').widgets[0].checked, true, 'updated native checkbox state should be readable');
     assert.equal(updatedFormFields.find((field) => field.name === 'choice').widgets[1].checked, true, 'updated native radio state should be readable');
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [formFieldsPtr]);
@@ -1703,6 +1709,7 @@ async function main() {
     assert.equal(workerFormResult.fields.length, 3, 'worker queryFormFields should return form fields');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').value, 'Initial Value', 'worker form field value should be readable');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].pageIndex, 0, 'worker form widget page index should be readable');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, false, 'worker form widget appearance state should be readable');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'agree').widgets[0].checked, false, 'worker checkbox state should be readable');
 
     workerFormBytes = createAcroFormPdf();
@@ -1750,6 +1757,7 @@ async function main() {
       [workerFormQueryBytes.buffer]
     );
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').value, 'Worker updated café 中文', 'worker setFormFieldValue should persist');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'worker setFormFieldValue should generate an appearance');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'agree').widgets[0].checked, true, 'worker setFormFieldChecked should persist checkbox');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'choice').widgets[1].checked, true, 'worker setFormFieldChecked should persist radio');
 

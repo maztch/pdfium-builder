@@ -142,6 +142,7 @@ Form field result buffer layout:
 - `double left`, `double bottom`, `double right`, `double top`: widget rectangle in PDF user-space
 - `int32 checked`: `1` when checked/selected, otherwise `0`
 - `int32 defaultChecked`: `1` when checked by default, otherwise `0`
+- `int32 hasAppearance`: `1` when the widget has a normal appearance entry, otherwise `0`
 - `uint32 exportValueSize`, followed by UTF-8 export value bytes
 - `uint32 onStateNameSize`, followed by ASCII/UTF-8 appearance on-state name bytes
 
@@ -156,7 +157,7 @@ Known form field types:
 - `6`: text field
 - `7`: signature
 
-This is a basic AcroForm API. It reads field metadata, widget geometry, checkbox/radio state, writes values, writes checkbox/radio state, sets `/NeedAppearances`, and does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
+This is a basic AcroForm API. It reads field metadata, widget geometry, checkbox/radio state, and appearance presence. Text, combo, and list value writes regenerate widget appearance streams when possible. Checkbox/radio writes update widget checked state and select the appropriate existing appearance state. The wrapper sets `/NeedAppearances` only when a widget still lacks a normal appearance. It does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
 
 ## Text extraction and search
 

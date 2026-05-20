@@ -36,11 +36,13 @@ MIME type writes use the embedded file stream `/Subtype` entry through PDFium in
 
 Replacing file bytes uses PDFium's attachment file setter, which updates the embedded file stream and preserves the name-tree entry. Deletion uses PDFium's attachment delete API, which removes the embedded file entry from the name tree.
 
-## AcroForm Values
+## AcroForm Values And Appearances
 
 Form field read/write uses PDFium interactive form internals because the public annotation API exposes useful field reads but not a simple general-purpose value setter.
 
-The wrapper enumerates AcroForm fields, serializes field metadata, UTF-8 values, widget geometry, and checkbox/radio state into a compact binary buffer, and updates values by fully qualified field name. Checkbox and radio writes use the field's zero-based control index. After a write it sets AcroForm `/NeedAppearances true` so viewers can regenerate widget appearances.
+The wrapper enumerates AcroForm fields, serializes field metadata, UTF-8 values, widget geometry, checkbox/radio state, and normal appearance presence into a compact binary buffer, and updates values by fully qualified field name. Checkbox and radio writes use the field's zero-based control index.
+
+After text, combo, or list value writes, the wrapper ensures the AcroForm default resource dictionaries exist and calls PDFium's form appearance generator for each widget. Checkbox and radio writes update `/AS` through PDFium's field/control logic so existing appearance states are selected. If every widget has a normal appearance after the write, `/NeedAppearances` is set to `false`; otherwise it is set to `true` as a viewer fallback.
 
 Scope is intentionally basic: no PDF JavaScript execution, field calculation, field validation, or XFA support.
 

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -547,16 +548,109 @@ int PageIndexForFormControl(CPDF_Document* doc, const CPDF_FormControl* control)
   return -1;
 }
 
-void MarkNeedsAppearances(CPDF_Document* doc) {
-  if (!doc) return;
+RetainPtr<CPDF_Dictionary> GetOrCreateAcroForm(CPDF_Document* doc) {
+  if (!doc) return nullptr;
 
   RetainPtr<CPDF_Dictionary> root = doc->GetMutableRoot();
-  if (!root) return;
+  if (!root) return nullptr;
 
   RetainPtr<CPDF_Dictionary> acroform = root->GetMutableDictFor("AcroForm");
+  if (!acroform) {
+    acroform = CPDF_InteractiveForm::InitAcroFormDict(doc);
+  }
+  return acroform;
+}
+
+bool EnsureFormAppearanceResources(CPDF_Document* doc) {
+  RetainPtr<CPDF_Dictionary> acroform = GetOrCreateAcroForm(doc);
+  if (!acroform) return false;
+
+  RetainPtr<CPDF_Dictionary> dr = acroform->GetMutableDictFor("DR");
+  if (!dr) {
+    dr = acroform->SetNewFor<CPDF_Dictionary>("DR");
+  }
+  if (!dr) return false;
+
+  RetainPtr<CPDF_Dictionary> font = dr->GetMutableDictFor("Font");
+  if (!font) {
+    font = dr->SetNewFor<CPDF_Dictionary>("Font");
+  }
+  if (!font) return false;
+
+  if (!acroform->KeyExist("DA")) {
+    acroform->SetNewFor<CPDF_String>("DA", "/Helv 0 Tf 0 g");
+  }
+
+  return true;
+}
+
+bool HasNormalAppearance(const CPDF_FormControl* control) {
+  if (!control) return false;
+
+  RetainPtr<const CPDF_Dictionary> widget = control->GetWidgetDict();
+  if (!widget) return false;
+
+  RetainPtr<const CPDF_Dictionary> ap = widget->GetDictFor("AP");
+  if (!ap) return false;
+
+  return !!ap->GetDirectObjectFor("N");
+}
+
+bool RefreshFormFieldAppearances(CPDF_Document* doc, CPDF_FormField* field) {
+  if (!doc || !field) return false;
+
+  if (!EnsureFormAppearanceResources(doc)) return false;
+
+  const CPDF_FormField::Type type = field->GetType();
+  std::optional<CPDF_GenerateAP::FormType> form_type;
+  switch (type) {
+    case CPDF_FormField::kText:
+    case CPDF_FormField::kRichText:
+    case CPDF_FormField::kFile:
+      form_type = CPDF_GenerateAP::kTextField;
+      break;
+    case CPDF_FormField::kComboBox:
+      form_type = CPDF_GenerateAP::kComboBox;
+      break;
+    case CPDF_FormField::kListBox:
+      form_type = CPDF_GenerateAP::kListBox;
+      break;
+    default:
+      break;
+  }
+
+  bool all_controls_have_appearances = true;
+  for (int control_index = 0, control_count = field->CountControls();
+       control_index < control_count;
+       ++control_index) {
+    CPDF_FormControl* control = field->GetControl(control_index);
+    if (!control) {
+      all_controls_have_appearances = false;
+      continue;
+    }
+
+    RetainPtr<const CPDF_Dictionary> widget = control->GetWidgetDict();
+    CPDF_Dictionary* mutable_widget =
+        const_cast<CPDF_Dictionary*>(widget.Get());
+    if (mutable_widget && form_type.has_value()) {
+      CPDF_GenerateAP::GenerateFormAP(doc, mutable_widget, form_type.value());
+    }
+
+    if (!HasNormalAppearance(control)) {
+      all_controls_have_appearances = false;
+    }
+  }
+
+  return all_controls_have_appearances;
+}
+
+void SetNeedsAppearances(CPDF_Document* doc, bool value) {
+  if (!doc) return;
+
+  RetainPtr<CPDF_Dictionary> acroform = GetOrCreateAcroForm(doc);
   if (!acroform) return;
 
-  acroform->SetNewFor<CPDF_Boolean>("NeedAppearances", true);
+  acroform->SetNewFor<CPDF_Boolean>("NeedAppearances", value);
 }
 
 bool IsAllowedMetadataKey(const char* key) {
@@ -1865,6 +1959,7 @@ int wasm_pdf_get_form_fields(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_
       AppendDouble(&result, rect.top);
       AppendInt32(&result, control->IsChecked() ? 1 : 0);
       AppendInt32(&result, control->IsDefaultChecked() ? 1 : 0);
+      AppendInt32(&result, HasNormalAppearance(control) ? 1 : 0);
       AppendBytes(
           &result,
           export_value.data(),
@@ -1928,7 +2023,7 @@ int wasm_pdf_set_form_field_value(uintptr_t handle,
     return 0;
   }
 
-  MarkNeedsAppearances(doc);
+  SetNeedsAppearances(doc, !RefreshFormFieldAppearances(doc, field));
   ClearLastError();
   return 1;
 }
@@ -1981,7 +2076,7 @@ int wasm_pdf_set_form_field_checked(uintptr_t handle,
       control_index,
       checked != 0,
       NotificationOption::kDoNotNotify);
-  MarkNeedsAppearances(doc);
+  SetNeedsAppearances(doc, !RefreshFormFieldAppearances(doc, field));
   ClearLastError();
   return 1;
 }

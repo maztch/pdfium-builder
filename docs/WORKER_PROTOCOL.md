@@ -384,6 +384,7 @@ Returns `{ fields }`, where each field has:
       rect: { left, bottom, right, top },
       checked,
       defaultChecked,
+      hasAppearance,
       exportValue,
       onStateName
     }
@@ -404,7 +405,7 @@ Form field type values are listed in [API Reference](API.md#forms).
 
 Returns `{ pdfBytes }`.
 
-This updates AcroForm field values and sets `/NeedAppearances`. It does not run PDF JavaScript, calculation, validation, or XFA flows.
+This updates AcroForm field values and regenerates text, combo, and list widget appearances when possible. It sets `/NeedAppearances` only when a widget still lacks a normal appearance. It does not run PDF JavaScript, calculation, validation, or XFA flows.
 
 ## `setFormFieldChecked`
 
@@ -418,7 +419,7 @@ This updates AcroForm field values and sets `/NeedAppearances`. It does not run 
 
 Returns `{ pdfBytes }`.
 
-This updates checkbox and radio widgets and sets `/NeedAppearances`.
+This updates checkbox and radio widgets and selects the appropriate existing appearance state. It sets `/NeedAppearances` only when a widget still lacks a normal appearance.
 
 ## `readAttachment`
 
