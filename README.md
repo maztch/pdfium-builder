@@ -78,6 +78,8 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_get_permissions(handle)`
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)`
 - `wasm_pdf_delete_page(handle, pageIndex)`
+- `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)`
+- `wasm_pdf_import_pages(srcHandle, pageRange, dstHandle, dstPageIndex)`
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)`
 - `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)`
 - `wasm_pdf_free_buffer(ptr)`
@@ -103,6 +105,8 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `15`: invalid UTF-8 text
 - `16`: create page failed
 - `17`: delete page failed
+- `18`: copy page failed
+- `19`: import pages failed
 - `20`: PDFium unknown error
 - `21`: PDFium file error
 - `22`: PDFium format error
@@ -118,13 +122,15 @@ Query return conventions:
 - `wasm_pdf_get_permissions(handle)` returns PDF permission flags. Unprotected or owner-unlocked documents usually return `0xffffffff`; `0` indicates failure when paired with a non-zero `wasm_pdf_last_error()`.
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. A `pageIndex` larger than the last page appends.
 - `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
+- `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)` imports one source page into the destination document. `dstPageIndex` may equal the destination page count to append.
+- `wasm_pdf_import_pages(srcHandle, pageRange, dstHandle, dstPageIndex)` imports a one-based PDFium page range like `"1,3,5-7"`. Pass an empty string to import all source pages. `dstPageIndex` may equal the destination page count to append.
 
 ## Browser usage flow
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
 3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, and `wasm_pdf_get_permissions`
-4. Optionally mutate pages with `wasm_pdf_insert_blank_page` / `wasm_pdf_delete_page`
+4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Call `wasm_pdf_add_text_page`
 6. Call `wasm_pdf_save_copy`
 7. Create a Blob and download/save
@@ -189,7 +195,7 @@ You can improve runtime behavior by:
 - Validating Unicode rendering/extraction across target viewers and fonts
 - Embedding/loading custom fonts instead of only using `"Helvetica"`
 - Adding structured error codes (instead of only `0/1`)
-- Adding APIs for page insertion/removal, image placement, metadata, etc.
+- Adding APIs for image placement, metadata, page geometry, etc.
 
 ## Notes and caveats
 

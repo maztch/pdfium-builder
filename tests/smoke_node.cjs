@@ -48,6 +48,7 @@ async function main() {
   let outSizePtr = 0;
   let outPtr = 0;
   let handle = 0;
+  let sourceHandle = 0;
   let invalidTextPtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
@@ -147,6 +148,55 @@ async function main() {
     assert.equal(invalidDelete, 0, 'invalid delete should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid delete should report invalid argument');
 
+    sourceHandle = mod.ccall(
+      'wasm_pdf_open_from_bytes',
+      'number',
+      ['number', 'number', 'string'],
+      [inputPtr, inputBytes.length, '']
+    );
+    assert.notEqual(sourceHandle, 0, 'open source PDF failed');
+
+    const copied = mod.ccall(
+      'wasm_pdf_copy_page',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [sourceHandle, 0, handle, 1]
+    );
+    assert.equal(copied, 1, 'copy page should succeed');
+    assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]), 2, 'copy should add one page');
+
+    const gotCopiedPageSize = mod.ccall(
+      'wasm_pdf_get_page_size',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 1, widthPtr, heightPtr]
+    );
+    assert.equal(gotCopiedPageSize, 1, 'copied page size should be readable');
+    assert.equal(mod.getValue(widthPtr, 'double'), 612, 'copied page width should match source');
+    assert.equal(mod.getValue(heightPtr, 'double'), 792, 'copied page height should match source');
+
+    const imported = mod.ccall(
+      'wasm_pdf_import_pages',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [sourceHandle, '1', handle, 2]
+    );
+    assert.equal(imported, 1, 'import pages should succeed');
+    assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]), 3, 'import should add one page');
+
+    const invalidImport = mod.ccall(
+      'wasm_pdf_import_pages',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [sourceHandle, '9', handle, 3]
+    );
+    assert.equal(invalidImport, 0, 'invalid import range should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 19, 'invalid import should report import failure');
+
+    assert.equal(mod.ccall('wasm_pdf_delete_page', 'number', ['number', 'number'], [handle, 2]), 1, 'delete imported page should succeed');
+    assert.equal(mod.ccall('wasm_pdf_delete_page', 'number', ['number', 'number'], [handle, 1]), 1, 'delete copied page should succeed');
+    assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]), 1, 'copy/import cleanup should restore one page');
+
     invalidTextPtr = mod._malloc(3);
     assert.notEqual(invalidTextPtr, 0, 'invalid text malloc failed');
     mod.HEAPU8.set([0xc3, 0x28, 0], invalidTextPtr);
@@ -204,6 +254,7 @@ async function main() {
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
   } finally {
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
+    if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
     if (invalidTextPtr) mod._free(invalidTextPtr);
     if (widthPtr) mod._free(widthPtr);

@@ -34,7 +34,7 @@ em++ \
   -sEXPORT_ES6=1 \
   -sENVIRONMENT=web,worker,node \
   -sEXPORT_NAME=PdfiumWasm \
-  -sEXPORTED_FUNCTIONS='["_malloc","_free","_wasm_pdf_last_error","_wasm_pdfium_init","_wasm_pdfium_destroy","_wasm_pdf_open_from_bytes","_wasm_pdf_close","_wasm_pdf_page_count","_wasm_pdf_get_page_size","_wasm_pdf_get_page_rotation","_wasm_pdf_get_permissions","_wasm_pdf_insert_blank_page","_wasm_pdf_delete_page","_wasm_pdf_add_text_page","_wasm_pdf_save_copy","_wasm_pdf_free_buffer"]' \
+  -sEXPORTED_FUNCTIONS='["_malloc","_free","_wasm_pdf_last_error","_wasm_pdfium_init","_wasm_pdfium_destroy","_wasm_pdf_open_from_bytes","_wasm_pdf_close","_wasm_pdf_page_count","_wasm_pdf_get_page_size","_wasm_pdf_get_page_rotation","_wasm_pdf_get_permissions","_wasm_pdf_insert_blank_page","_wasm_pdf_delete_page","_wasm_pdf_copy_page","_wasm_pdf_import_pages","_wasm_pdf_add_text_page","_wasm_pdf_save_copy","_wasm_pdf_free_buffer"]' \
   -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","getValue","HEAPU8"]' \
   -o "${DIST_DIR}/pdfium.js"
 

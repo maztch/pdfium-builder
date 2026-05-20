@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "public/fpdf_edit.h"
+#include "public/fpdf_ppo.h"
 #include "public/fpdf_save.h"
 #include "public/fpdfview.h"
 
@@ -33,6 +34,8 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_INVALID_UTF8 = 15,
   WASM_PDF_ERROR_CREATE_PAGE_FAILED = 16,
   WASM_PDF_ERROR_DELETE_PAGE_FAILED = 17,
+  WASM_PDF_ERROR_COPY_PAGE_FAILED = 18,
+  WASM_PDF_ERROR_IMPORT_PAGES_FAILED = 19,
   WASM_PDF_ERROR_PDFIUM_UNKNOWN = 20,
   WASM_PDF_ERROR_PDFIUM_FILE = 21,
   WASM_PDF_ERROR_PDFIUM_FORMAT = 22,
@@ -399,6 +402,72 @@ int wasm_pdf_delete_page(uintptr_t handle, int page_index) {
 
   if (FPDF_GetPageCount(doc) != page_count_before - 1) {
     SetLastError(WASM_PDF_ERROR_DELETE_PAGE_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_copy_page(uintptr_t src_handle,
+                       int src_page_index,
+                       uintptr_t dst_handle,
+                       int dst_page_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+
+  FPDF_DOCUMENT src_doc = GetDocument(src_handle);
+  FPDF_DOCUMENT dst_doc = GetDocument(dst_handle);
+  if (!src_doc || !dst_doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  const int src_page_count = FPDF_GetPageCount(src_doc);
+  const int dst_page_count = FPDF_GetPageCount(dst_doc);
+  if (src_page_index < 0 || src_page_index >= src_page_count ||
+      dst_page_index < 0 || dst_page_index > dst_page_count) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  const int page_indices[] = {src_page_index};
+  if (!FPDF_ImportPagesByIndex(dst_doc, src_doc, page_indices, 1, dst_page_index)) {
+    SetLastError(WASM_PDF_ERROR_COPY_PAGE_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_import_pages(uintptr_t src_handle,
+                          const char* page_range,
+                          uintptr_t dst_handle,
+                          int dst_page_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+
+  FPDF_DOCUMENT src_doc = GetDocument(src_handle);
+  FPDF_DOCUMENT dst_doc = GetDocument(dst_handle);
+  if (!src_doc || !dst_doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  const int dst_page_count = FPDF_GetPageCount(dst_doc);
+  if (dst_page_index < 0 || dst_page_index > dst_page_count) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  const char* pdfium_page_range = page_range && page_range[0] ? page_range : nullptr;
+  if (!FPDF_ImportPages(dst_doc, src_doc, pdfium_page_range, dst_page_index)) {
+    SetLastError(WASM_PDF_ERROR_IMPORT_PAGES_FAILED);
     return 0;
   }
 
