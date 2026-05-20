@@ -1969,6 +1969,46 @@ int wasm_pdf_get_form_fields(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_
           on_state_name.data(),
           static_cast<uint32_t>(on_state_name.size()));
     }
+
+    const bool has_options = field->HasOptField();
+    const int option_count = has_options ? field->CountOptions() : 0;
+    if (option_count < 0 ||
+        static_cast<uint64_t>(option_count) > std::numeric_limits<uint32_t>::max()) {
+      SetLastError(WASM_PDF_ERROR_FORM_READ_FAILED);
+      return 0;
+    }
+
+    AppendUint32(&result, static_cast<uint32_t>(option_count));
+    for (int option_index = 0; option_index < option_count; ++option_index) {
+      const std::vector<uint8_t> label =
+          WideStringToUtf8Bytes(field->GetOptionLabel(option_index));
+      const std::vector<uint8_t> option_value =
+          WideStringToUtf8Bytes(field->GetOptionValue(option_index));
+
+      AppendInt32(&result, option_index);
+      AppendInt32(&result, field->IsItemSelected(option_index) ? 1 : 0);
+      AppendInt32(&result, field->GetDefaultSelectedItem() == option_index ? 1 : 0);
+      AppendBytes(&result, label.data(), static_cast<uint32_t>(label.size()));
+      AppendBytes(
+          &result,
+          option_value.data(),
+          static_cast<uint32_t>(option_value.size()));
+    }
+
+    const int selected_count =
+        (field->GetType() == CPDF_FormField::kComboBox ||
+         field->GetType() == CPDF_FormField::kListBox)
+            ? field->CountSelectedItems()
+            : 0;
+    if (selected_count < 0 ||
+        static_cast<uint64_t>(selected_count) > std::numeric_limits<uint32_t>::max()) {
+      SetLastError(WASM_PDF_ERROR_FORM_READ_FAILED);
+      return 0;
+    }
+    AppendUint32(&result, static_cast<uint32_t>(selected_count));
+    for (int selected_index = 0; selected_index < selected_count; ++selected_index) {
+      AppendInt32(&result, field->GetSelectedIndex(selected_index));
+    }
   }
 
   if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
@@ -2076,6 +2116,56 @@ int wasm_pdf_set_form_field_checked(uintptr_t handle,
       control_index,
       checked != 0,
       NotificationOption::kDoNotNotify);
+  SetNeedsAppearances(doc, !RefreshFormFieldAppearances(doc, field));
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_form_field_selected_index(uintptr_t handle,
+                                           const char* field_name_utf8,
+                                           int option_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!field_name_utf8 || !field_name_utf8[0] || option_index < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT fpdf_doc = GetDocument(handle);
+  if (!fpdf_doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(fpdf_doc);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  WideString field_name;
+  if (!DecodeUtf8CStringToWideString(field_name_utf8, &field_name)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  CPDF_InteractiveForm form(doc);
+  CPDF_FormField* field = form.GetField(0, field_name);
+  if (!field ||
+      (field->GetType() != CPDF_FormField::kComboBox &&
+       field->GetType() != CPDF_FormField::kListBox) ||
+      option_index >= field->CountOptions()) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!field->ClearSelection(NotificationOption::kDoNotNotify)) {
+    SetLastError(WASM_PDF_ERROR_FORM_WRITE_FAILED);
+    return 0;
+  }
+  field->SetItemSelection(option_index, NotificationOption::kDoNotNotify);
   SetNeedsAppearances(doc, !RefreshFormFieldAppearances(doc, field));
   ClearLastError();
   return 1;

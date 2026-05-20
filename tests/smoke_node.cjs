@@ -41,9 +41,9 @@ function createMinimalPdf() {
 
 function createAcroFormPdf() {
   const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 6 0 R 7 0 R] /DA (/Helv 0 Tf 0 g) >> >>\nendobj\n',
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 6 0 R 7 0 R 13 0 R 14 0 R] /DA (/Helv 0 Tf 0 g) >> >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R /Annots [5 0 R 6 0 R 8 0 R 9 0 R] >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R /Annots [5 0 R 6 0 R 8 0 R 9 0 R 13 0 R 14 0 R] >>\nendobj\n',
     '4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n',
     '5 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (customer.name) /TU (Customer Name) /V (Initial Value) /DV (Default Value) /Rect [72 700 280 730] /F 4 /P 3 0 R /DA (/Helv 12 Tf 0 g) >>\nendobj\n',
     '6 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /TU (Agree) /V /Off /DV /Off /Rect [72 650 92 670] /F 4 /P 3 0 R /AS /Off /AP << /N << /Off 10 0 R /Yes 11 0 R >> >> >>\nendobj\n',
@@ -53,6 +53,8 @@ function createAcroFormPdf() {
     '10 0 obj\n<< /Length 0 /BBox [0 0 20 20] >>\nstream\n\nendstream\nendobj\n',
     '11 0 obj\n<< /Length 0 /BBox [0 0 20 20] >>\nstream\n\nendstream\nendobj\n',
     '12 0 obj\n<< /Length 0 /BBox [0 0 20 20] >>\nstream\n\nendstream\nendobj\n',
+    '13 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Ch /T (country) /TU (Country) /Ff 131072 /Opt [(US) (ES) (FR)] /V (US) /I [0] /Rect [72 560 180 585] /F 4 /P 3 0 R /DA (/Helv 12 Tf 0 g) >>\nendobj\n',
+    '14 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Ch /T (color) /TU (Color) /Opt [(Red) (Green) (Blue)] /V (Green) /I [1] /Rect [72 500 180 545] /F 4 /P 3 0 R /DA (/Helv 12 Tf 0 g) >>\nendobj\n',
   ];
 
   let pdf = '%PDF-1.4\n';
@@ -329,6 +331,8 @@ function parseFormFields(bytes) {
       value: readString(),
       defaultValue: readString(),
       widgets: [],
+      options: [],
+      selectedIndexes: [],
     };
 
     const widgetCount = readUint32();
@@ -348,6 +352,22 @@ function parseFormFields(bytes) {
         exportValue: readString(),
         onStateName: readString(),
       });
+    }
+
+    const optionCount = readUint32();
+    for (let optionPosition = 0; optionPosition < optionCount; optionPosition += 1) {
+      field.options.push({
+        index: readInt32(),
+        selected: readInt32() !== 0,
+        defaultSelected: readInt32() !== 0,
+        label: readString(),
+        value: readString(),
+      });
+    }
+
+    const selectedIndexCount = readUint32();
+    for (let selectedPosition = 0; selectedPosition < selectedIndexCount; selectedPosition += 1) {
+      field.selectedIndexes.push(readInt32());
     }
 
     fields.push(field);
@@ -417,7 +437,9 @@ async function main() {
       const textField = fields.find((field) => field.name === 'customer.name');
       const checkbox = fields.find((field) => field.name === 'agree');
       const radio = fields.find((field) => field.name === 'choice');
-      assert.equal(fields.length, 3, 'direct API form field count should match');
+      const combo = fields.find((field) => field.name === 'country');
+      const list = fields.find((field) => field.name === 'color');
+      assert.equal(fields.length, 5, 'direct API form field count should match');
       assert.equal(textField.alternateName, 'Customer Name', 'direct API form alternate name should be readable');
       assert.equal(textField.value, 'Initial Value', 'direct API form value should be readable');
       assert.equal(textField.defaultValue, 'Default Value', 'direct API form default value should be readable');
@@ -428,13 +450,24 @@ async function main() {
       assert.equal(checkbox.widgets[0].checked, false, 'direct API checkbox initial state should be readable');
       assert.equal(radio.type, 3, 'direct API radio type should be readable');
       assert.equal(radio.widgets.length, 2, 'direct API radio widgets should be readable');
+      assert.equal(combo.type, 4, 'direct API combo type should be readable');
+      assert.deepEqual(combo.options.map((option) => option.value), ['US', 'ES', 'FR'], 'direct API combo options should be readable');
+      assert.deepEqual(combo.selectedIndexes, [0], 'direct API combo selected index should be readable');
+      assert.equal(list.type, 5, 'direct API list type should be readable');
+      assert.deepEqual(list.options.map((option) => option.selected), [false, true, false], 'direct API list selected options should be readable');
       doc.setFormFieldValue('customer.name', 'Updated café 中文');
       doc.setFormFieldChecked('agree', true);
       doc.setFormFieldChecked('choice', true, 1);
+      doc.setFormFieldSelectedIndex('country', 2);
+      doc.setFormFieldSelectedIndex('color', 0);
       const updatedFields = doc.formFields();
       assert.equal(updatedFields.find((field) => field.name === 'customer.name').value, 'Updated café 中文', 'direct API form value should update');
       assert.equal(updatedFields.find((field) => field.name === 'agree').widgets[0].checked, true, 'direct API checkbox should update');
       assert.equal(updatedFields.find((field) => field.name === 'choice').widgets[1].checked, true, 'direct API radio should update');
+      assert.deepEqual(updatedFields.find((field) => field.name === 'country').selectedIndexes, [2], 'direct API combo selected index should update');
+      assert.equal(updatedFields.find((field) => field.name === 'country').value, 'FR', 'direct API combo value should update');
+      assert.deepEqual(updatedFields.find((field) => field.name === 'color').selectedIndexes, [0], 'direct API list selected index should update');
+      assert.equal(updatedFields.find((field) => field.name === 'color').value, 'Red', 'direct API list value should update');
       assert.equal(updatedFields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'direct API form value update should generate an appearance');
       return doc.save();
     });
@@ -446,6 +479,8 @@ async function main() {
       assert.equal(fields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'direct API form appearance should persist after reopen');
       assert.equal(fields.find((field) => field.name === 'agree').widgets[0].checked, true, 'direct API checkbox should persist after reopen');
       assert.equal(fields.find((field) => field.name === 'choice').widgets[1].checked, true, 'direct API radio should persist after reopen');
+      assert.deepEqual(fields.find((field) => field.name === 'country').selectedIndexes, [2], 'direct API combo should persist after reopen');
+      assert.deepEqual(fields.find((field) => field.name === 'color').selectedIndexes, [0], 'direct API list should persist after reopen');
     });
   } finally {
     directApi.destroy();
@@ -573,7 +608,9 @@ async function main() {
     const nativeTextField = formFields.find((field) => field.name === 'customer.name');
     const nativeCheckbox = formFields.find((field) => field.name === 'agree');
     const nativeRadio = formFields.find((field) => field.name === 'choice');
-    assert.equal(formFields.length, 3, 'form field count should match');
+    const nativeCombo = formFields.find((field) => field.name === 'country');
+    const nativeList = formFields.find((field) => field.name === 'color');
+    assert.equal(formFields.length, 5, 'form field count should match');
     assert.equal(nativeTextField.type, 6, 'form text field type should be readable');
     assert.equal(nativeTextField.alternateName, 'Customer Name', 'form alternate name should be readable');
     assert.equal(nativeTextField.value, 'Initial Value', 'form field value should be readable');
@@ -584,6 +621,11 @@ async function main() {
     assert.equal(nativeCheckbox.widgets[0].checked, false, 'checkbox state should be readable');
     assert.equal(nativeRadio.type, 3, 'radio type should be readable');
     assert.equal(nativeRadio.widgets.length, 2, 'radio widgets should be readable');
+    assert.equal(nativeCombo.type, 4, 'combo type should be readable');
+    assert.deepEqual(nativeCombo.options.map((option) => option.value), ['US', 'ES', 'FR'], 'combo options should be readable');
+    assert.deepEqual(nativeCombo.selectedIndexes, [0], 'combo selected index should be readable');
+    assert.equal(nativeList.type, 5, 'list type should be readable');
+    assert.deepEqual(nativeList.options.map((option) => option.selected), [false, true, false], 'list selected option should be readable');
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [formFieldsPtr]);
     formFieldsPtr = 0;
 
@@ -606,6 +648,18 @@ async function main() {
       [formHandle, 'choice', 1, 1]
     ), 1, 'radio state should be writable');
     assert.equal(mod.ccall(
+      'wasm_pdf_set_form_field_selected_index',
+      'number',
+      ['number', 'string', 'number'],
+      [formHandle, 'country', 2]
+    ), 1, 'combo selected index should be writable');
+    assert.equal(mod.ccall(
+      'wasm_pdf_set_form_field_selected_index',
+      'number',
+      ['number', 'string', 'number'],
+      [formHandle, 'color', 0]
+    ), 1, 'list selected index should be writable');
+    assert.equal(mod.ccall(
       'wasm_pdf_get_form_fields',
       'number',
       ['number', 'number', 'number'],
@@ -618,6 +672,10 @@ async function main() {
     assert.equal(updatedFormFields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'updated native form value should generate an appearance');
     assert.equal(updatedFormFields.find((field) => field.name === 'agree').widgets[0].checked, true, 'updated native checkbox state should be readable');
     assert.equal(updatedFormFields.find((field) => field.name === 'choice').widgets[1].checked, true, 'updated native radio state should be readable');
+    assert.deepEqual(updatedFormFields.find((field) => field.name === 'country').selectedIndexes, [2], 'updated native combo selected index should be readable');
+    assert.equal(updatedFormFields.find((field) => field.name === 'country').value, 'FR', 'updated native combo value should be readable');
+    assert.deepEqual(updatedFormFields.find((field) => field.name === 'color').selectedIndexes, [0], 'updated native list selected index should be readable');
+    assert.equal(updatedFormFields.find((field) => field.name === 'color').value, 'Red', 'updated native list value should be readable');
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [formFieldsPtr]);
     formFieldsPtr = 0;
 
@@ -635,6 +693,13 @@ async function main() {
       [formHandle, 'customer.name', 0, 1]
     ), 0, 'checked update on text field should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'checked update on text field should report invalid argument');
+    assert.equal(mod.ccall(
+      'wasm_pdf_set_form_field_selected_index',
+      'number',
+      ['number', 'string', 'number'],
+      [formHandle, 'country', 99]
+    ), 0, 'invalid choice option index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid choice option index should report invalid argument');
 
     const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
     assert.equal(pageCount, 1, 'page count should report one page');
@@ -1706,11 +1771,13 @@ async function main() {
       },
       [workerFormBytes.buffer]
     );
-    assert.equal(workerFormResult.fields.length, 3, 'worker queryFormFields should return form fields');
+    assert.equal(workerFormResult.fields.length, 5, 'worker queryFormFields should return form fields');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').value, 'Initial Value', 'worker form field value should be readable');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].pageIndex, 0, 'worker form widget page index should be readable');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, false, 'worker form widget appearance state should be readable');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'agree').widgets[0].checked, false, 'worker checkbox state should be readable');
+    assert.deepEqual(workerFormResult.fields.find((field) => field.name === 'country').selectedIndexes, [0], 'worker combo selected index should be readable');
+    assert.deepEqual(workerFormResult.fields.find((field) => field.name === 'color').options.map((option) => option.selected), [false, true, false], 'worker list selected option should be readable');
 
     workerFormBytes = createAcroFormPdf();
     workerFormResult = await requestPdfWorker(
@@ -1747,6 +1814,28 @@ async function main() {
       [workerFormBytes.buffer]
     );
     workerFormBytes = new Uint8Array(workerFormResult.pdfBytes);
+    workerFormResult = await requestPdfWorker(
+      worker,
+      'setFormFieldSelectedIndex',
+      {
+        pdfBytes: workerFormBytes.buffer,
+        name: 'country',
+        optionIndex: 2,
+      },
+      [workerFormBytes.buffer]
+    );
+    workerFormBytes = new Uint8Array(workerFormResult.pdfBytes);
+    workerFormResult = await requestPdfWorker(
+      worker,
+      'setFormFieldSelectedIndex',
+      {
+        pdfBytes: workerFormBytes.buffer,
+        name: 'color',
+        optionIndex: 0,
+      },
+      [workerFormBytes.buffer]
+    );
+    workerFormBytes = new Uint8Array(workerFormResult.pdfBytes);
     const workerFormQueryBytes = workerFormBytes.slice();
     workerFormResult = await requestPdfWorker(
       worker,
@@ -1760,6 +1849,8 @@ async function main() {
     assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].hasAppearance, true, 'worker setFormFieldValue should generate an appearance');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'agree').widgets[0].checked, true, 'worker setFormFieldChecked should persist checkbox');
     assert.equal(workerFormResult.fields.find((field) => field.name === 'choice').widgets[1].checked, true, 'worker setFormFieldChecked should persist radio');
+    assert.deepEqual(workerFormResult.fields.find((field) => field.name === 'country').selectedIndexes, [2], 'worker setFormFieldSelectedIndex should persist combo');
+    assert.deepEqual(workerFormResult.fields.find((field) => field.name === 'color').selectedIndexes, [0], 'worker setFormFieldSelectedIndex should persist list');
 
     let workerBytes = createMinimalPdf();
     let workerResult = await requestPdfWorker(

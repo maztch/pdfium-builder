@@ -123,6 +123,7 @@ This API covers document-level embedded files, not file-attachment annotations.
 - `wasm_pdf_get_form_fields(handle, outPtrPtr, outSizePtr)` writes a binary AcroForm field summary buffer. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_set_form_field_value(handle, fieldName, value)` updates one AcroForm field value by fully qualified field name. `fieldName` and `value` must be valid UTF-8.
 - `wasm_pdf_set_form_field_checked(handle, fieldName, controlIndex, checked)` updates one checkbox or radio widget by fully qualified field name and zero-based widget/control index. `checked` is `0` or `1`.
+- `wasm_pdf_set_form_field_selected_index(handle, fieldName, optionIndex)` selects one combo/list option by zero-based option index. Existing list selections are cleared first.
 
 Form field result buffer layout:
 
@@ -145,6 +146,16 @@ Form field result buffer layout:
 - `int32 hasAppearance`: `1` when the widget has a normal appearance entry, otherwise `0`
 - `uint32 exportValueSize`, followed by UTF-8 export value bytes
 - `uint32 onStateNameSize`, followed by ASCII/UTF-8 appearance on-state name bytes
+- `uint32 optionCount`
+- Per option:
+- `int32 index`: zero-based option index
+- `int32 selected`: `1` when selected, otherwise `0`
+- `int32 defaultSelected`: `1` when selected by default, otherwise `0`
+- `uint32 labelSize`, followed by UTF-8 option label bytes
+- `uint32 valueSize`, followed by UTF-8 export value bytes
+- `uint32 selectedIndexCount`
+- Per selected index:
+- `int32 selectedIndex`
 
 Known form field types:
 
@@ -157,7 +168,7 @@ Known form field types:
 - `6`: text field
 - `7`: signature
 
-This is a basic AcroForm API. It reads field metadata, widget geometry, checkbox/radio state, and appearance presence. Text, combo, and list value writes regenerate widget appearance streams when possible. Checkbox/radio writes update widget checked state and select the appropriate existing appearance state. The wrapper sets `/NeedAppearances` only when a widget still lacks a normal appearance. It does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
+This is a basic AcroForm API. It reads field metadata, widget geometry, checkbox/radio state, choice options, selected choice indexes, and appearance presence. Text, combo, and list value writes regenerate widget appearance streams when possible. Checkbox/radio writes update widget checked state and select the appropriate existing appearance state. Choice selection writes clear previous list selections before selecting the requested option. The wrapper sets `/NeedAppearances` only when a widget still lacks a normal appearance. It does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
 
 ## Text extraction and search
 

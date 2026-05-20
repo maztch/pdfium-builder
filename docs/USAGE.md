@@ -64,6 +64,7 @@ await pdfium.withDocument(inputBytes, (doc) => {
   doc.setFormFieldValue("customer.name", "Updated value");
   doc.setFormFieldChecked("agree", true);
   doc.setFormFieldChecked("choice", true, 1);
+  doc.setFormFieldSelectedIndex("country", 2);
   return doc.save();
 });
 ```

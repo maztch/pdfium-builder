@@ -428,6 +428,8 @@ function parseFormFields(bytes) {
       value: readString(),
       defaultValue: readString(),
       widgets: [],
+      options: [],
+      selectedIndexes: [],
     };
 
     const widgetCount = readUint32();
@@ -447,6 +449,22 @@ function parseFormFields(bytes) {
         exportValue: readString(),
         onStateName: readString(),
       });
+    }
+
+    const optionCount = readUint32();
+    for (let optionPosition = 0; optionPosition < optionCount; optionPosition += 1) {
+      field.options.push({
+        index: readInt32(),
+        selected: readInt32() !== 0,
+        defaultSelected: readInt32() !== 0,
+        label: readString(),
+        value: readString(),
+      });
+    }
+
+    const selectedIndexCount = readUint32();
+    for (let selectedPosition = 0; selectedPosition < selectedIndexCount; selectedPosition += 1) {
+      field.selectedIndexes.push(readInt32());
     }
 
     fields.push(field);
@@ -1898,6 +1916,45 @@ async function setFormFieldChecked(payload = {}) {
   }
 }
 
+async function setFormFieldSelectedIndex(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const updated = mod.ccall(
+      "wasm_pdf_set_form_field_selected_index",
+      "number",
+      ["number", "string", "number"],
+      [
+        handle,
+        stringOrDefault(payload.name, ""),
+        numberOrDefault(payload.optionIndex, -1),
+      ]
+    );
+    if (!updated) throwPdfiumError(mod, "Unable to set form field selected option");
+
+    return saveDocumentBytes(mod, handle);
+  } finally {
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+  }
+}
+
 async function readAttachment(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -2363,6 +2420,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "setFormFieldChecked") {
     return setFormFieldChecked(message.payload);
+  }
+  if (message.type === "setFormFieldSelectedIndex") {
+    return setFormFieldSelectedIndex(message.payload);
   }
   if (message.type === "readAttachment") {
     return readAttachment(message.payload);

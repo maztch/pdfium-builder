@@ -388,7 +388,17 @@ Returns `{ fields }`, where each field has:
       exportValue,
       onStateName
     }
-  ]
+  ],
+  options: [
+    {
+      index,
+      selected,
+      defaultSelected,
+      label,
+      value
+    }
+  ],
+  selectedIndexes
 }
 ```
 
@@ -420,6 +430,19 @@ This updates AcroForm field values and regenerates text, combo, and list widget 
 Returns `{ pdfBytes }`.
 
 This updates checkbox and radio widgets and selects the appropriate existing appearance state. It sets `/NeedAppearances` only when a widget still lacks a normal appearance.
+
+## `setFormFieldSelectedIndex`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `name` | string | Yes | `""` | Fully qualified combo/list field name. |
+| `optionIndex` | number | Yes | `-1` | Zero-based option index. Existing list selections are cleared first. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+This updates combo/list selected option, regenerates supported widget appearances, and sets `/NeedAppearances` only when a widget still lacks a normal appearance.
 
 ## `readAttachment`
 

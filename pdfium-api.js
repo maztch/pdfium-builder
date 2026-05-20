@@ -263,6 +263,8 @@ function parseFormFields(bytes) {
       value: readString(),
       defaultValue: readString(),
       widgets: [],
+      options: [],
+      selectedIndexes: [],
     };
 
     const widgetCount = readUint32();
@@ -282,6 +284,22 @@ function parseFormFields(bytes) {
         exportValue: readString(),
         onStateName: readString(),
       });
+    }
+
+    const optionCount = readUint32();
+    for (let optionPosition = 0; optionPosition < optionCount; optionPosition += 1) {
+      field.options.push({
+        index: readInt32(),
+        selected: readInt32() !== 0,
+        defaultSelected: readInt32() !== 0,
+        label: readString(),
+        value: readString(),
+      });
+    }
+
+    const selectedIndexCount = readUint32();
+    for (let selectedPosition = 0; selectedPosition < selectedIndexCount; selectedPosition += 1) {
+      field.selectedIndexes.push(readInt32());
     }
 
     fields.push(field);
@@ -567,6 +585,17 @@ export class PdfDocument {
       ["number", "string", "number", "number"],
       [this.handle, name, controlIndex, checked ? 1 : 0],
       "Unable to set form field checked state"
+    );
+    return this;
+  }
+
+  setFormFieldSelectedIndex(name, optionIndex) {
+    this.call(
+      "wasm_pdf_set_form_field_selected_index",
+      "number",
+      ["number", "string", "number"],
+      [this.handle, name, optionIndex],
+      "Unable to set form field selected option"
     );
     return this;
   }

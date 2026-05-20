@@ -33,7 +33,7 @@ Status legend:
 | Outline/bookmarks read | `wasm_pdf_get_outline` | `queryOutline` | Yes | [API](API.md#outline-and-bookmarks), [Worker Protocol](WORKER_PROTOCOL.md#queryoutline) | Stable | Returns a depth-first navigation tree with page destinations and URI/file actions. |
 | Embedded attachment list/read | `wasm_pdf_attachment_count`, `wasm_pdf_get_attachment_info`, `wasm_pdf_get_attachment_file` | `queryAttachments`, `readAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#queryattachments) | Stable | Supports document-level embedded files. |
 | Embedded attachment update/delete | `wasm_pdf_set_attachment_file`, `wasm_pdf_delete_attachment` | `updateAttachment`, `deleteAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#updateattachment) | Stable | Replaces attachment bytes/MIME type or removes an attachment entry. |
-| AcroForm field read | `wasm_pdf_get_form_fields` | `queryFormFields` | Yes | [API](API.md#forms), [Worker Protocol](WORKER_PROTOCOL.md#queryformfields) | Stable | Returns field names, types, flags, values, defaults, widget geometry, checkbox/radio state, and appearance presence. |
+| AcroForm field read | `wasm_pdf_get_form_fields` | `queryFormFields` | Yes | [API](API.md#forms), [Worker Protocol](WORKER_PROTOCOL.md#queryformfields) | Stable | Returns field names, types, flags, values, defaults, widget geometry, checkbox/radio state, choice options, selected indexes, and appearance presence. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Worker returns subtype, flags, rect, color, border, contents, URI, and quadpoints. |
@@ -55,6 +55,7 @@ Status legend:
 | Delete embedded attachment | `wasm_pdf_delete_attachment` | `deleteAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#deleteattachment) | Stable | Removes the attachment from the embedded files name tree. |
 | Set AcroForm field value | `wasm_pdf_set_form_field_value` | `setFormFieldValue` | Yes | [API](API.md#forms), [Worker Protocol](WORKER_PROTOCOL.md#setformfieldvalue) | Stable | Updates a field by fully qualified name and regenerates supported appearances. |
 | Set checkbox/radio state | `wasm_pdf_set_form_field_checked` | `setFormFieldChecked` | Yes | [API](API.md#forms), [Worker Protocol](WORKER_PROTOCOL.md#setformfieldchecked) | Stable | Updates a checkbox or radio widget by field name and control index. |
+| Set combo/list selected option | `wasm_pdf_set_form_field_selected_index` | `setFormFieldSelectedIndex` | Yes | [API](API.md#forms), [Worker Protocol](WORKER_PROTOCOL.md#setformfieldselectedindex) | Stable | Selects one option by zero-based option index. |
 | Form appearance generation | Form setters | Form setters | Yes | [API](API.md#forms), [Implementation Notes](IMPLEMENTATION_NOTES.md#acroform-values-and-appearances) | Stable | Regenerates text/choice AP streams and tracks `hasAppearance`. |
 
 ## Content Editing
@@ -140,6 +141,7 @@ Status legend:
 | `queryFormFields` | AcroForm field metadata and values | Form field array | Stable | Read-only. |
 | `setFormFieldValue` | Set one AcroForm field value | Saved PDF bytes | Stable | Uses fully qualified field name. |
 | `setFormFieldChecked` | Set checkbox/radio widget state | Saved PDF bytes | Stable | Uses fully qualified field name and control index. |
+| `setFormFieldSelectedIndex` | Set combo/list selected option | Saved PDF bytes | Stable | Uses fully qualified field name and zero-based option index. |
 | `deletePageObject` | Delete one page object | Saved PDF bytes | Stable | Regenerates page content. |
 | `transformPageObject` | Affine transform one page object | Saved PDF bytes | Stable | Matrix must be invertible. |
 

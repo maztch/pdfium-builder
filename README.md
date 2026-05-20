@@ -57,8 +57,8 @@ Required tools:
 ## Current capability summary
 
 - Open PDF bytes, save copies, and close handles.
-- Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, embedded attachments, AcroForm fields/widgets, annotations, page objects, text, and text search rectangles.
-- Mutate page rotation, page boxes, page size, metadata, embedded attachments, AcroForm field values and checkbox/radio state, pages, page objects, annotations, text, and RGBA/JPEG/PNG images.
+- Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, embedded attachments, AcroForm fields/widgets/options, annotations, page objects, text, and text search rectangles.
+- Mutate page rotation, page boxes, page size, metadata, embedded attachments, AcroForm field values, checkbox/radio state, and combo/list selection, pages, page objects, annotations, text, and RGBA/JPEG/PNG images.
 - Decode arbitrary browser-supported image formats to RGBA with `createImageBitmap`/canvas helpers before insertion.
 - Render full pages or PDF-space page areas to RGBA buffers.
 - Use direct JS methods for common operations without manually managing `_malloc`, output pointers, or document handles.

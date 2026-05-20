@@ -40,7 +40,7 @@ Replacing file bytes uses PDFium's attachment file setter, which updates the emb
 
 Form field read/write uses PDFium interactive form internals because the public annotation API exposes useful field reads but not a simple general-purpose value setter.
 
-The wrapper enumerates AcroForm fields, serializes field metadata, UTF-8 values, widget geometry, checkbox/radio state, and normal appearance presence into a compact binary buffer, and updates values by fully qualified field name. Checkbox and radio writes use the field's zero-based control index.
+The wrapper enumerates AcroForm fields, serializes field metadata, UTF-8 values, widget geometry, checkbox/radio state, combo/list options, selected indexes, and normal appearance presence into a compact binary buffer, and updates values by fully qualified field name. Checkbox and radio writes use the field's zero-based control index. Combo/list writes use a zero-based option index and clear existing list selections before selecting the requested option.
 
 After text, combo, or list value writes, the wrapper ensures the AcroForm default resource dictionaries exist and calls PDFium's form appearance generator for each widget. Checkbox and radio writes update `/AS` through PDFium's field/control logic so existing appearance states are selected. If every widget has a normal appearance after the write, `/NeedAppearances` is set to `false`; otherwise it is set to `true` as a viewer fallback.
 
