@@ -82,6 +82,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_get_permissions(handle)`
 - `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)`
 - `wasm_pdf_set_metadata(handle, key, value)`
+- `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)`
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)`
 - `wasm_pdf_delete_page(handle, pageIndex)`
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)`
@@ -122,6 +123,8 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `26`: page geometry failed
 - `27`: metadata read failed
 - `28`: metadata write failed
+- `29`: load text page failed
+- `30`: text extraction failed
 
 Query return conventions:
 
@@ -135,6 +138,7 @@ Query return conventions:
 - `wasm_pdf_get_permissions(handle)` returns PDF permission flags. Unprotected or owner-unlocked documents usually return `0xffffffff`; `0` indicates failure when paired with a non-zero `wasm_pdf_last_error()`.
 - `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)` returns `1` on success and writes a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_set_metadata(handle, key, value)` returns `1` on success and `0` on failure. `value` must be valid UTF-8.
+- `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` returns `1` on success and writes extracted page text as a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. A `pageIndex` larger than the last page appends.
 - `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)` imports one source page into the destination document. `dstPageIndex` may equal the destination page count to append.
@@ -163,7 +167,7 @@ Metadata keys:
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
-3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, and `wasm_pdf_get_metadata`
+3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, and `wasm_pdf_get_page_text`
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
@@ -231,7 +235,7 @@ You can improve runtime behavior by:
 - Validating Unicode rendering/extraction across target viewers and fonts
 - Embedding/loading custom fonts instead of only using `"Helvetica"`
 - Adding structured error codes (instead of only `0/1`)
-- Adding APIs for image placement, text extraction, annotations, etc.
+- Adding APIs for image placement, annotations, outlines/bookmarks, etc.
 
 ## Notes and caveats
 

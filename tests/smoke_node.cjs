@@ -53,6 +53,7 @@ async function main() {
   let metadataPtrPtr = 0;
   let metadataSizePtr = 0;
   let metadataPtr = 0;
+  let textPtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
   let leftPtr = 0;
@@ -378,6 +379,29 @@ async function main() {
     assert.equal(mod.getValue(rightPtr, 'double'), 420, 'saved media right should persist');
     assert.equal(mod.getValue(topPtr, 'double'), 540, 'saved media top should persist');
     assert.equal(mod.ccall(
+      'wasm_pdf_get_page_text',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [reopened, 0, metadataPtrPtr, metadataSizePtr]
+    ), 1, 'saved PDF page text should be extractable');
+    textPtr = mod.getValue(metadataPtrPtr, 'i32');
+    const textSize = mod.getValue(metadataSizePtr, 'i32');
+    assert.notEqual(textPtr, 0, 'page text output pointer should not be null');
+    const extractedText = Buffer.from(mod.HEAPU8.subarray(textPtr, textPtr + textSize)).toString('utf8');
+    assert.match(extractedText, /Smoke test/, 'extracted text should contain added text');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);
+    textPtr = 0;
+
+    const invalidTextExtraction = mod.ccall(
+      'wasm_pdf_get_page_text',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [reopened, 99, metadataPtrPtr, metadataSizePtr]
+    );
+    assert.equal(invalidTextExtraction, 0, 'invalid page text extraction should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 6, 'invalid page text extraction should report load page failure');
+
+    assert.equal(mod.ccall(
       'wasm_pdf_get_metadata',
       'number',
       ['number', 'string', 'number', 'number'],
@@ -397,6 +421,7 @@ async function main() {
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
   } finally {
+    if (textPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);
     if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);

@@ -20,6 +20,7 @@
 #include "public/fpdf_edit.h"
 #include "public/fpdf_ppo.h"
 #include "public/fpdf_save.h"
+#include "public/fpdf_text.h"
 #include "public/fpdf_transformpage.h"
 #include "public/fpdfview.h"
 
@@ -55,6 +56,8 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_PAGE_GEOMETRY_FAILED = 26,
   WASM_PDF_ERROR_METADATA_READ_FAILED = 27,
   WASM_PDF_ERROR_METADATA_WRITE_FAILED = 28,
+  WASM_PDF_ERROR_LOAD_TEXT_PAGE_FAILED = 29,
+  WASM_PDF_ERROR_TEXT_EXTRACTION_FAILED = 30,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -716,6 +719,89 @@ int wasm_pdf_set_metadata(uintptr_t handle, const char* key, const char* value_u
   const std::vector<uint8_t> utf16le = Utf16StringToUtf16LeBytes(utf16);
   const WideString wide = WideString::FromUTF16LE(utf16le);
   info->SetNewFor<CPDF_String>(key, wide.AsStringView());
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_page_text(uintptr_t handle,
+                           int page_index,
+                           uint8_t** out_ptr,
+                           uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (!text_page) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_LOAD_TEXT_PAGE_FAILED);
+    return 0;
+  }
+
+  const int char_count = FPDFText_CountChars(text_page);
+  if (char_count < 0) {
+    FPDFText_ClosePage(text_page);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_TEXT_EXTRACTION_FAILED);
+    return 0;
+  }
+
+  if (char_count == 0) {
+    FPDFText_ClosePage(text_page);
+    FPDF_ClosePage(page);
+    if (!CopyBytesToMalloc(nullptr, 0, out_ptr, out_size)) {
+      return 0;
+    }
+    ClearLastError();
+    return 1;
+  }
+
+  std::vector<unsigned short> text_buffer(static_cast<size_t>(char_count) + 1);
+  const int written_count = FPDFText_GetText(text_page, 0, char_count, text_buffer.data());
+  FPDFText_ClosePage(text_page);
+  FPDF_ClosePage(page);
+
+  if (written_count <= 0) {
+    SetLastError(WASM_PDF_ERROR_TEXT_EXTRACTION_FAILED);
+    return 0;
+  }
+
+  const int code_unit_count = written_count - 1;
+  std::vector<uint8_t> utf16le;
+  utf16le.reserve(static_cast<size_t>(code_unit_count) * 2);
+  for (int i = 0; i < code_unit_count; ++i) {
+    const unsigned short value = text_buffer[static_cast<size_t>(i)];
+    utf16le.push_back(static_cast<uint8_t>(value & 0xFF));
+    utf16le.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+  }
+
+  const WideString wide = WideString::FromUTF16LE(utf16le);
+  const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
+  const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
+  if (!CopyBytesToMalloc(utf8_data, utf8.GetLength(), out_ptr, out_size)) {
+    return 0;
+  }
+
   ClearLastError();
   return 1;
 }
