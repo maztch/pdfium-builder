@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
+#include "core/fpdfapi/parser/cpdf_boolean.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -20,6 +21,7 @@
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_filespec.h"
+#include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_generateap.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fxcrt/fx_string.h"
@@ -29,6 +31,7 @@
 #include "public/fpdf_attachment.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
+#include "public/fpdf_formfill.h"
 #include "public/fpdf_ppo.h"
 #include "public/fpdf_save.h"
 #include "public/fpdf_text.h"
@@ -98,6 +101,8 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_ANNOTATION_READ_FAILED = 56,
   WASM_PDF_ERROR_ANNOTATION_DELETE_FAILED = 57,
   WASM_PDF_ERROR_ATTACHMENT_DELETE_FAILED = 58,
+  WASM_PDF_ERROR_FORM_READ_FAILED = 59,
+  WASM_PDF_ERROR_FORM_WRITE_FAILED = 60,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -457,6 +462,64 @@ bool GetAnnotationLinkUri(FPDF_DOCUMENT document,
   if (!action || FPDFAction_GetType(action) != PDFACTION_URI) return true;
 
   return GetActionStringBytes(document, action, true, output);
+}
+
+std::vector<uint8_t> WideStringToUtf8Bytes(const WideString& value) {
+  const ByteString utf8 = FX_UTF8Encode(value.AsStringView());
+  const auto* data = reinterpret_cast<const uint8_t*>(utf8.c_str());
+  return std::vector<uint8_t>(data, data + utf8.GetLength());
+}
+
+bool DecodeUtf8CStringToWideString(const char* value, WideString* output) {
+  if (!value || !output) return false;
+
+  std::u16string utf16;
+  if (!DecodeUtf8ToUtf16(value, &utf16)) return false;
+
+  std::vector<uint8_t> utf16le;
+  utf16le.reserve(utf16.size() * 2);
+  for (char16_t code_unit : utf16) {
+    utf16le.push_back(static_cast<uint8_t>(code_unit & 0xFF));
+    utf16le.push_back(static_cast<uint8_t>((code_unit >> 8) & 0xFF));
+  }
+  *output = WideString::FromUTF16LE(utf16le);
+  return true;
+}
+
+int FormFieldTypeToPublic(CPDF_FormField::Type type) {
+  switch (type) {
+    case CPDF_FormField::kPushButton:
+      return FPDF_FORMFIELD_PUSHBUTTON;
+    case CPDF_FormField::kRadioButton:
+      return FPDF_FORMFIELD_RADIOBUTTON;
+    case CPDF_FormField::kCheckBox:
+      return FPDF_FORMFIELD_CHECKBOX;
+    case CPDF_FormField::kText:
+    case CPDF_FormField::kRichText:
+    case CPDF_FormField::kFile:
+      return FPDF_FORMFIELD_TEXTFIELD;
+    case CPDF_FormField::kListBox:
+      return FPDF_FORMFIELD_LISTBOX;
+    case CPDF_FormField::kComboBox:
+      return FPDF_FORMFIELD_COMBOBOX;
+    case CPDF_FormField::kSign:
+      return FPDF_FORMFIELD_SIGNATURE;
+    case CPDF_FormField::kUnknown:
+    default:
+      return FPDF_FORMFIELD_UNKNOWN;
+  }
+}
+
+void MarkNeedsAppearances(CPDF_Document* doc) {
+  if (!doc) return;
+
+  RetainPtr<CPDF_Dictionary> root = doc->GetMutableRoot();
+  if (!root) return;
+
+  RetainPtr<CPDF_Dictionary> acroform = root->GetMutableDictFor("AcroForm");
+  if (!acroform) return;
+
+  acroform->SetNewFor<CPDF_Boolean>("NeedAppearances", true);
 }
 
 bool IsAllowedMetadataKey(const char* key) {
@@ -1676,6 +1739,126 @@ int wasm_pdf_get_attachment_file(uintptr_t handle,
     return 0;
   }
 
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_form_fields(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT fpdf_doc = GetDocument(handle);
+  if (!fpdf_doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(fpdf_doc);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  CPDF_InteractiveForm form(doc);
+  const size_t field_count = form.CountFields(WideString());
+  if (field_count > std::numeric_limits<uint32_t>::max()) {
+    SetLastError(WASM_PDF_ERROR_OUTPUT_TOO_LARGE);
+    return 0;
+  }
+
+  std::vector<uint8_t> result;
+  AppendUint32(&result, static_cast<uint32_t>(field_count));
+  for (size_t i = 0; i < field_count; ++i) {
+    CPDF_FormField* field = form.GetField(i, WideString());
+    if (!field) {
+      SetLastError(WASM_PDF_ERROR_FORM_READ_FAILED);
+      return 0;
+    }
+
+    const std::vector<uint8_t> name = WideStringToUtf8Bytes(field->GetFullName());
+    const std::vector<uint8_t> alternate_name =
+        WideStringToUtf8Bytes(field->GetAlternateName());
+    const std::vector<uint8_t> value = WideStringToUtf8Bytes(field->GetValue());
+    const std::vector<uint8_t> default_value =
+        WideStringToUtf8Bytes(field->GetDefaultValue());
+
+    AppendInt32(&result, FormFieldTypeToPublic(field->GetType()));
+    AppendUint32(&result, field->GetFieldFlags());
+    AppendInt32(&result, field->CountControls());
+    AppendBytes(&result, name.data(), static_cast<uint32_t>(name.size()));
+    AppendBytes(
+        &result,
+        alternate_name.data(),
+        static_cast<uint32_t>(alternate_name.size()));
+    AppendBytes(&result, value.data(), static_cast<uint32_t>(value.size()));
+    AppendBytes(
+        &result,
+        default_value.data(),
+        static_cast<uint32_t>(default_value.size()));
+  }
+
+  if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_form_field_value(uintptr_t handle,
+                                  const char* field_name_utf8,
+                                  const char* value_utf8) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!field_name_utf8 || !field_name_utf8[0] || !value_utf8) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT fpdf_doc = GetDocument(handle);
+  if (!fpdf_doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(fpdf_doc);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  WideString field_name;
+  WideString value;
+  if (!DecodeUtf8CStringToWideString(field_name_utf8, &field_name) ||
+      !DecodeUtf8CStringToWideString(value_utf8, &value)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  CPDF_InteractiveForm form(doc);
+  CPDF_FormField* field = form.GetField(0, field_name);
+  if (!field) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!field->SetValue(value, NotificationOption::kDoNotNotify)) {
+    SetLastError(WASM_PDF_ERROR_FORM_WRITE_FAILED);
+    return 0;
+  }
+
+  MarkNeedsAppearances(doc);
   ClearLastError();
   return 1;
 }

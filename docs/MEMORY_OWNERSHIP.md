@@ -10,7 +10,7 @@ Prefer `pdfium-api.js` for direct JS usage. It applies these rules internally fo
 |---|---|---|---|
 | Input buffer pointer | JS via `_malloc` | JS via `_free` | Copy PDF/image bytes into `HEAPU8` before calling native APIs. |
 | Document handle | `wasm_pdf_open_from_bytes` | `wasm_pdf_close` | Always close in `finally`. |
-| Output buffer pointer | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Applies to save, metadata, outline, attachment, annotation info, text, search, and render outputs. |
+| Output buffer pointer | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Applies to save, metadata, outline, attachment, form, annotation info, text, search, and render outputs. |
 | Pointer-to-pointer slots | JS via `_malloc(4)` | JS via `_free` | Used for output pointer and output size. |
 | Render output bytes | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Copy with `HEAPU8.slice` if data must survive memory growth/free. |
 
@@ -23,6 +23,7 @@ Prefer `pdfium-api.js` for direct JS usage. It applies these rules internally fo
 | `wasm_pdf_get_outline(handle, outPtrPtr, outSizePtr)` | Binary outline result buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_attachment_info(handle, attachmentIndex, outPtrPtr, outSizePtr)` | Binary attachment info buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_attachment_file(handle, attachmentIndex, outPtrPtr, outSizePtr)` | Attachment file bytes | `wasm_pdf_free_buffer(outPtr)` |
+| `wasm_pdf_get_form_fields(handle, outPtrPtr, outSizePtr)` | Binary form field result buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_annotation_info(handle, pageIndex, annotationIndex, outPtrPtr, outSizePtr)` | Binary annotation info buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` | UTF-8 bytes | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)` | Binary search result buffer | `wasm_pdf_free_buffer(outPtr)` |
@@ -35,6 +36,7 @@ Most mutation/query APIs return scalar values and do not allocate caller-owned o
 
 - Page count, page size, page rotation, page boxes, permissions.
 - Attachment count.
+- Form field value updates.
 - Page insert/delete/copy/import.
 - Text/image insertion and attachment add/update/delete.
 - Annotation creation/update/delete and annotation count.

@@ -52,7 +52,19 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, page text extraction, text search, text insertion, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, AcroForm field read/write, page text extraction, text search, text insertion, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+
+Basic AcroForm usage:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const fields = doc.formFields();
+  console.log(fields.map((field) => [field.name, field.value]));
+
+  doc.setFormFieldValue("customer.name", "Updated value");
+  return doc.save();
+});
+```
 
 ## Browser image decoding
 
@@ -188,8 +200,8 @@ try {
 
 1. Read input PDF into `Uint8Array`.
 2. Open with `wasm_pdf_open_from_bytes`.
-3. Run query APIs such as page count, page size, metadata, outline/bookmarks, text extraction, search, annotations, or page objects.
-4. Run mutation APIs such as page insertion, text/image insertion, annotations, metadata, geometry, or object transforms.
+3. Run query APIs such as page count, page size, metadata, outline/bookmarks, form fields, text extraction, search, annotations, or page objects.
+4. Run mutation APIs such as page insertion, text/image insertion, annotations, metadata, form field values, geometry, or object transforms.
 5. Optionally render a full page or area to RGBA preview pixels.
 6. Save with `wasm_pdf_save_copy`.
 7. Create a `Blob` and download or upload it.

@@ -118,6 +118,36 @@ Attachment info buffer layout:
 
 This API covers document-level embedded files, not file-attachment annotations.
 
+## Forms
+
+- `wasm_pdf_get_form_fields(handle, outPtrPtr, outSizePtr)` writes a binary AcroForm field summary buffer. Release non-null output with `wasm_pdf_free_buffer`.
+- `wasm_pdf_set_form_field_value(handle, fieldName, value)` updates one AcroForm field value by fully qualified field name. `fieldName` and `value` must be valid UTF-8.
+
+Form field result buffer layout:
+
+- `uint32`: field count
+- Per field:
+- `int32 type`: PDFium form field type
+- `uint32 flags`: field flags
+- `int32 controlCount`: number of widget controls
+- `uint32 nameSize`, followed by UTF-8 full field name bytes
+- `uint32 alternateNameSize`, followed by UTF-8 alternate/display name bytes
+- `uint32 valueSize`, followed by UTF-8 current value bytes
+- `uint32 defaultValueSize`, followed by UTF-8 default value bytes
+
+Known form field types:
+
+- `0`: unknown
+- `1`: push button
+- `2`: check box
+- `3`: radio button
+- `4`: combo box
+- `5`: list box
+- `6`: text field
+- `7`: signature
+
+This is a basic AcroForm value API. It reads field metadata and writes values, sets `/NeedAppearances`, and does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
+
 ## Text extraction and search
 
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` writes extracted page text as UTF-8 bytes. Release with `wasm_pdf_free_buffer`.
@@ -285,3 +315,5 @@ Common render flag:
 - `56`: annotation read failed
 - `57`: annotation delete failed
 - `58`: attachment delete failed
+- `59`: form read failed
+- `60`: form write failed

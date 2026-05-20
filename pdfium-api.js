@@ -60,6 +60,8 @@ export const PDFIUM_ERROR_NAMES = Object.freeze({
   56: "annotation_read_failed",
   57: "annotation_delete_failed",
   58: "attachment_delete_failed",
+  59: "form_read_failed",
+  60: "form_write_failed",
 });
 
 export class PdfiumApiError extends Error {
@@ -217,6 +219,47 @@ function parseSearchResults(bytes) {
   }
 
   return matches;
+}
+
+function parseFormFields(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const fields = [];
+  let offset = 0;
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = textDecoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  const fieldCount = readUint32();
+  for (let index = 0; index < fieldCount; index += 1) {
+    fields.push({
+      index,
+      type: readInt32(),
+      flags: readUint32(),
+      controlCount: readInt32(),
+      name: readString(),
+      alternateName: readString() || null,
+      value: readString(),
+      defaultValue: readString(),
+    });
+  }
+
+  return fields;
 }
 
 export async function createPdfiumApi(options = {}) {
@@ -463,6 +506,30 @@ export class PdfDocument {
       "Unable to search page text"
     );
     return parseSearchResults(bytes);
+  }
+
+  formFields() {
+    const bytes = this.outputBytes(
+      (outPtrPtr, outSizePtr) => this.mod.ccall(
+        "wasm_pdf_get_form_fields",
+        "number",
+        ["number", "number", "number"],
+        [this.handle, outPtrPtr, outSizePtr]
+      ),
+      "Unable to query form fields"
+    );
+    return parseFormFields(bytes);
+  }
+
+  setFormFieldValue(name, value) {
+    this.call(
+      "wasm_pdf_set_form_field_value",
+      "number",
+      ["number", "string", "string"],
+      [this.handle, name, value],
+      "Unable to set form field value"
+    );
+    return this;
   }
 
   addText({ pageIndex = 0, text = "", x = 80, y = 120, fontSize = 16, rgba = 0xff000000 } = {}) {

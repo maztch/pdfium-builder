@@ -60,6 +60,8 @@ const ERROR_NAMES = Object.freeze({
   56: "annotation_read_failed",
   57: "annotation_delete_failed",
   58: "attachment_delete_failed",
+  59: "form_read_failed",
+  60: "form_write_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -375,6 +377,48 @@ function parseAnnotationInfo(bytes, index) {
     uri: uri || null,
     quadPoints,
   };
+}
+
+function parseFormFields(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder("utf-8");
+  const fields = [];
+  let offset = 0;
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  const fieldCount = readUint32();
+  for (let index = 0; index < fieldCount; index += 1) {
+    fields.push({
+      index,
+      type: readInt32(),
+      flags: readUint32(),
+      controlCount: readInt32(),
+      name: readString(),
+      alternateName: readString() || null,
+      value: readString(),
+      defaultValue: readString(),
+    });
+  }
+
+  return fields;
 }
 
 const DEFAULT_METADATA_KEYS = Object.freeze([
@@ -1692,6 +1736,94 @@ async function queryAttachments(payload = {}) {
   }
 }
 
+async function queryFormFields(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!inputPtr || !outPtrPtr || !outSizePtr) {
+      throw new PdfiumWorkerError("Unable to allocate form query buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const queried = mod.ccall(
+      "wasm_pdf_get_form_fields",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!queried) throwPdfiumError(mod, "Unable to query form fields");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || outSize < 4) throw new PdfiumWorkerError("Form field output is invalid", 59);
+
+    return { fields: parseFormFields(mod.HEAPU8.slice(outPtr, outPtr + outSize)) };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
+async function setFormFieldValue(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const updated = mod.ccall(
+      "wasm_pdf_set_form_field_value",
+      "number",
+      ["number", "string", "string"],
+      [
+        handle,
+        stringOrDefault(payload.name, ""),
+        stringOrDefault(payload.value, ""),
+      ]
+    );
+    if (!updated) throwPdfiumError(mod, "Unable to set form field value");
+
+    return saveDocumentBytes(mod, handle);
+  } finally {
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+  }
+}
+
 async function readAttachment(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -2148,6 +2280,12 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "queryAttachments") {
     return queryAttachments(message.payload);
+  }
+  if (message.type === "queryFormFields") {
+    return queryFormFields(message.payload);
+  }
+  if (message.type === "setFormFieldValue") {
+    return setFormFieldValue(message.payload);
   }
   if (message.type === "readAttachment") {
     return readAttachment(message.payload);

@@ -36,6 +36,14 @@ MIME type writes use the embedded file stream `/Subtype` entry through PDFium in
 
 Replacing file bytes uses PDFium's attachment file setter, which updates the embedded file stream and preserves the name-tree entry. Deletion uses PDFium's attachment delete API, which removes the embedded file entry from the name tree.
 
+## AcroForm Values
+
+Form field read/write uses PDFium interactive form internals because the public annotation API exposes useful field reads but not a simple general-purpose value setter.
+
+The wrapper enumerates AcroForm fields, serializes field metadata and UTF-8 values into a compact binary buffer, and updates values by fully qualified field name. After a write it sets AcroForm `/NeedAppearances true` so viewers can regenerate widget appearances.
+
+Scope is intentionally basic: no PDF JavaScript execution, field calculation, field validation, or XFA support.
+
 ## JPEG Insertion
 
 JPEG insertion uses PDFium's public `FPDFImageObj_LoadJpegFileInline()` API.

@@ -358,6 +358,43 @@ Returns `{ attachments }`, where each attachment has:
 
 `mimeType` is `null` when absent. `fileSize` is `-1` when file bytes are not readable.
 
+## `queryFormFields`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ fields }`, where each field has:
+
+```js
+{
+  index,
+  type,
+  flags,
+  controlCount,
+  name,
+  alternateName,
+  value,
+  defaultValue
+}
+```
+
+Form field type values are listed in [API Reference](API.md#forms).
+
+## `setFormFieldValue`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `name` | string | Yes | `""` | Fully qualified AcroForm field name. |
+| `value` | string | Yes | `""` | Replacement field value. Must be valid UTF-8. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+This updates AcroForm field values and sets `/NeedAppearances`. It does not run PDF JavaScript, calculation, validation, or XFA flows.
+
 ## `readAttachment`
 
 | Field | Type | Required | Default | Notes |

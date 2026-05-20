@@ -626,9 +626,37 @@ worker.postMessage(
 
 Annotation update requests also return a saved PDF. Supported `updateType` values are `rect`, `color`, `text`, and `uri`.
 
+Use `queryFormFields` and `setFormFieldValue` for basic AcroForm values:
+
+```js
+{
+  id: "request-form-fields",
+  type: "queryFormFields",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-set-form-field",
+  type: "setFormFieldValue",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    name: "customer.name",
+    value: "Updated value",
+    password: ""
+  }
+}
+```
+
+The form API reads AcroForm field metadata and updates field values. It does not run PDF JavaScript, calculation, validation, or XFA flows.
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `queryFormFields`, `setFormFieldValue`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 
