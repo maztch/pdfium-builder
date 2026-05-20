@@ -153,6 +153,12 @@ struct DocumentState {
 std::unordered_map<uintptr_t, std::unique_ptr<DocumentState>> g_docs;
 bool g_pdfium_initialized = false;
 
+FPDF_DOCUMENT GetDocument(uintptr_t handle) {
+  auto it = g_docs.find(handle);
+  if (it == g_docs.end() || !it->second->doc) return nullptr;
+  return it->second->doc;
+}
+
 }  // namespace
 
 extern "C" {
@@ -242,6 +248,54 @@ void wasm_pdf_close(uintptr_t handle) {
 
   g_docs.erase(it);
   ClearLastError();
+}
+
+int wasm_pdf_page_count(uintptr_t handle) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  const int page_count = FPDF_GetPageCount(doc);
+  ClearLastError();
+  return page_count;
+}
+
+int wasm_pdf_get_page_size(uintptr_t handle,
+                           int page_index,
+                           double* width,
+                           double* height) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!width || !height) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *width = 0;
+  *height = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  if (!FPDF_GetPageSizeByIndex(doc, page_index, width, height)) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
 }
 
 int wasm_pdf_add_text_page(uintptr_t handle,

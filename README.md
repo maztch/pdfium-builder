@@ -72,6 +72,8 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdfium_init()`
 - `wasm_pdfium_destroy()`
 - `wasm_pdf_open_from_bytes(dataPtr, size, password)`
+- `wasm_pdf_page_count(handle)`
+- `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)`
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)`
 - `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)`
 - `wasm_pdf_free_buffer(ptr)`
@@ -102,13 +104,19 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `24`: PDFium security error
 - `25`: PDFium page error
 
+Query return conventions:
+
+- `wasm_pdf_page_count(handle)` returns a page count, or `-1` on failure.
+- `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)` returns `1` on success and writes doubles to `widthPtr` / `heightPtr`; it returns `0` on failure.
+
 ## Browser usage flow
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
-3. Call `wasm_pdf_add_text_page`
-4. Call `wasm_pdf_save_copy`
-5. Create a Blob and download/save
+3. Optionally call `wasm_pdf_page_count` / `wasm_pdf_get_page_size` to validate placement
+4. Call `wasm_pdf_add_text_page`
+5. Call `wasm_pdf_save_copy`
+6. Create a Blob and download/save
 
 See: `examples/browser_add_text_example.js`
 

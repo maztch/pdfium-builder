@@ -49,6 +49,8 @@ async function main() {
   let outPtr = 0;
   let handle = 0;
   let invalidTextPtr = 0;
+  let widthPtr = 0;
+  let heightPtr = 0;
 
   try {
     assert.equal(mod.ccall('wasm_pdfium_init', 'number', [], []), 1, 'PDFium init failed');
@@ -76,6 +78,35 @@ async function main() {
     );
     assert.notEqual(handle, 0, 'open input PDF failed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'successful open should clear last error');
+
+    const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
+    assert.equal(pageCount, 1, 'page count should report one page');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'page count should clear last error');
+
+    widthPtr = mod._malloc(8);
+    heightPtr = mod._malloc(8);
+    assert.notEqual(widthPtr, 0, 'width malloc failed');
+    assert.notEqual(heightPtr, 0, 'height malloc failed');
+
+    const gotPageSize = mod.ccall(
+      'wasm_pdf_get_page_size',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, widthPtr, heightPtr]
+    );
+    assert.equal(gotPageSize, 1, 'page size should be readable');
+    assert.equal(mod.getValue(widthPtr, 'double'), 612, 'page width should match fixture');
+    assert.equal(mod.getValue(heightPtr, 'double'), 792, 'page height should match fixture');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'page size should clear last error');
+
+    const invalidPageSize = mod.ccall(
+      'wasm_pdf_get_page_size',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 99, widthPtr, heightPtr]
+    );
+    assert.equal(invalidPageSize, 0, 'invalid page size query should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 6, 'invalid page size should report load page failure');
 
     invalidTextPtr = mod._malloc(3);
     assert.notEqual(invalidTextPtr, 0, 'invalid text malloc failed');
@@ -127,6 +158,7 @@ async function main() {
       [outPtr, outSize, '']
     );
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
+    assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
@@ -134,6 +166,8 @@ async function main() {
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
     if (invalidTextPtr) mod._free(invalidTextPtr);
+    if (widthPtr) mod._free(widthPtr);
+    if (heightPtr) mod._free(heightPtr);
     if (inputPtr) mod._free(inputPtr);
     if (outPtrPtr) mod._free(outPtrPtr);
     if (outSizePtr) mod._free(outSizePtr);
