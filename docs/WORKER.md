@@ -56,6 +56,26 @@ For image insertion, use `type: "addImage"` with decoded row-major RGBA pixels:
 }
 ```
 
+For encoded JPEG or PNG bytes, pass `imageFormat` and `imageBytes` instead of `rgbaBytes`:
+
+```js
+{
+  id: "request-encoded-image",
+  type: "addImage",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    imageFormat: "png",
+    imageBytes: pngBytes.buffer,
+    x: 72,
+    y: 120,
+    displayWidth: 320,
+    displayHeight: 180,
+    pageIndex: 0,
+    password: ""
+  }
+}
+```
+
 For page previews, use `type: "renderPage"`:
 
 ```js
@@ -286,6 +306,27 @@ worker.postMessage(
 );
 ```
 
+Encoded JPEG/PNG requests use the same response shape:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addImage",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      imageFormat: "jpeg",
+      imageBytes: jpegBytes.buffer,
+      x: 72,
+      y: 120,
+      displayWidth: 320,
+      displayHeight: 180,
+    },
+  },
+  [inputBytes.buffer, jpegBytes.buffer]
+);
+```
+
 Render responses return row-major RGBA pixels:
 
 ```js
@@ -416,3 +457,4 @@ Requests are serialized through an internal queue so multiple main-thread messag
 - Use transferable `ArrayBuffer` values to avoid copying input/output PDF bytes.
 - Create the worker with `{ type: "module" }` when loading it without a bundler.
 - If you relocate `worker/` or `dist/`, update the paths in `worker/pdfium-worker.js`.
+- PNG insertion supports non-interlaced 8-bit grayscale, RGB, grayscale-alpha, and RGBA PNGs.

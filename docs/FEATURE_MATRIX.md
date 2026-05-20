@@ -51,7 +51,9 @@ Status legend:
 | Feature | Native API | Worker support | Smoke tested | Docs | Status | Notes |
 |---|---|---:|---:|---|---|---|
 | Add text page object | `wasm_pdf_add_text_page` | `addText` | Yes | [API](API.md#content-insertion), [Usage](USAGE.md#minimal-direct-example), [Worker](WORKER.md#message-protocol) | Stable | UTF-8 input is strictly decoded. |
-| Add RGBA image | `wasm_pdf_add_rgba_image_page` | `addImage` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Expects row-major RGBA bytes. |
+| Add RGBA image | `wasm_pdf_add_rgba_image_page` | `addImage` with `imageFormat: "rgba"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Expects row-major RGBA bytes. |
+| Add JPEG image | `wasm_pdf_add_jpeg_image_page` | `addImage` with `imageFormat: "jpeg"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Uses PDFium's encoded JPEG image path. |
+| Add PNG image | `wasm_pdf_add_png_image_page` | `addImage` with `imageFormat: "png"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Supports common non-interlaced 8-bit PNGs. |
 | Enumerate page objects | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Returns object index, type, and bounds. |
 | Delete page object | `wasm_pdf_delete_page_object` | `deletePageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Regenerates page content after deletion. |
 | Transform page object | `wasm_pdf_transform_page_object` | `transformPageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Matrix must be invertible. |
@@ -89,13 +91,15 @@ Status legend:
 | Binary search result buffer | `wasm_pdf_search_page_text` | Parsed by worker | Yes | [API](API.md#text-extraction-and-search) | Stable | Worker returns parsed match objects. |
 | RGBA render buffers | Render APIs | `renderPage`, `renderPageArea` | Yes | [API](API.md#rendering) | Stable | Wrapper normalizes output to RGBA. |
 | RGBA image input | `wasm_pdf_add_rgba_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is row-major RGBA. |
+| JPEG image input | `wasm_pdf_add_jpeg_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is encoded JPEG bytes. |
+| PNG image input | `wasm_pdf_add_png_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is encoded PNG bytes decoded by the wrapper. |
 
 ## Worker Message Coverage
 
 | Message type | Covered operations | Returns | Status | Notes |
 |---|---|---|---|---|
 | `addText` | Add text page object | Saved PDF bytes | Stable | Simple text insertion convenience path. |
-| `addImage` | Add RGBA image page object | Saved PDF bytes | Stable | Requires decoded RGBA pixels. |
+| `addImage` | Add RGBA, JPEG, or PNG image page object | Saved PDF bytes | Stable | Use `rgbaBytes` for RGBA or `imageFormat` plus `imageBytes` for JPEG/PNG. |
 | `addAnnotation` | Highlight, link, text note, rectangle, FreeText | Saved PDF bytes | Stable | Uses `annotationType`. |
 | `updateAnnotation` | Rect, color, text, URI | Saved PDF bytes | Stable | Uses `updateType`. |
 | `renderPage` | Full-page rendering | RGBA bytes, width, height | Stable | Accepts render flags. |

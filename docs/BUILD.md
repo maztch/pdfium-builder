@@ -61,6 +61,7 @@ node tests/smoke_node.cjs
 - `scripts/bootstrap_pdfium.sh`: fetches upstream PDFium and `depot_tools`.
 - `scripts/build_pdfium_wasm.sh`: configures GN args and builds `third_party/pdfium/pdfium/out/wasm/obj/libpdfium.a`.
 - `scripts/build_wrapper_wasm.sh`: links `wasm/pdfium_edit_wrapper.cc`, `wasm/pdfium_wasm_platform_stub.cc`, and `libpdfium.a` into JS/WASM.
+- The wrapper link also uses PDFium's WASM zlib archive for PNG IDAT decompression.
 
 ## PDFium GN args
 

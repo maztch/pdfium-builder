@@ -29,6 +29,7 @@
 #include "public/fpdf_text.h"
 #include "public/fpdf_transformpage.h"
 #include "public/fpdfview.h"
+#include "third_party/zlib/zlib.h"
 
 namespace {
 
@@ -83,9 +84,16 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_SET_ANNOTATION_TEXT_FAILED = 47,
   WASM_PDF_ERROR_SET_ANNOTATION_BORDER_FAILED = 48,
   WASM_PDF_ERROR_GENERATE_ANNOTATION_AP_FAILED = 49,
+  WASM_PDF_ERROR_LOAD_JPEG_FAILED = 50,
+  WASM_PDF_ERROR_DECODE_PNG_FAILED = 51,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
+
+struct MemoryFileAccess {
+  const uint8_t* data = nullptr;
+  uint32_t size = 0;
+};
 
 void SetLastError(WasmPdfError error) {
   g_last_error = error;
@@ -115,6 +123,21 @@ WasmPdfError PdfiumLastErrorToWasmError(WasmPdfError fallback) {
       return fallback;
   }
 }
+
+int GetMemoryFileBlock(void* param,
+                       unsigned long position,
+                       unsigned char* buffer,
+                       unsigned long size) {
+  const auto* file = static_cast<const MemoryFileAccess*>(param);
+  if (!file || !file->data || !buffer || position > file->size ||
+      size > file->size - position) {
+    return 0;
+  }
+
+  memcpy(buffer, file->data + position, size);
+  return 1;
+}
+
 
 bool IsUtf8ContinuationByte(unsigned char value) {
   return (value & 0xC0) == 0x80;
@@ -279,6 +302,214 @@ bool IsValidPageBox(int box_type) {
 bool IsValidPageRect(double left, double bottom, double right, double top) {
   return std::isfinite(left) && std::isfinite(bottom) && std::isfinite(right) &&
          std::isfinite(top) && right > left && top > bottom;
+}
+
+bool IsValidImagePlacement(double x,
+                           double y,
+                           double display_width,
+                           double display_height) {
+  return std::isfinite(x) && std::isfinite(y) &&
+         std::isfinite(display_width) && std::isfinite(display_height) &&
+         display_width > 0 && display_height > 0;
+}
+
+uint32_t ReadBigEndianUint32(const uint8_t* data) {
+  return (static_cast<uint32_t>(data[0]) << 24) |
+         (static_cast<uint32_t>(data[1]) << 16) |
+         (static_cast<uint32_t>(data[2]) << 8) |
+         static_cast<uint32_t>(data[3]);
+}
+
+uint8_t PaethPredictor(uint8_t left, uint8_t up, uint8_t up_left) {
+  const int p = static_cast<int>(left) + static_cast<int>(up) -
+                static_cast<int>(up_left);
+  const int pa = std::abs(p - static_cast<int>(left));
+  const int pb = std::abs(p - static_cast<int>(up));
+  const int pc = std::abs(p - static_cast<int>(up_left));
+  if (pa <= pb && pa <= pc) return left;
+  if (pb <= pc) return up;
+  return up_left;
+}
+
+bool DecodePngToRgba(const uint8_t* png,
+                     uint32_t png_size,
+                     std::vector<uint8_t>* rgba,
+                     int* width,
+                     int* height) {
+  if (!png || png_size == 0 || !rgba || !width || !height) return false;
+
+  static constexpr uint8_t kPngSignature[] = {
+      0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+  if (png_size < sizeof(kPngSignature) ||
+      memcmp(png, kPngSignature, sizeof(kPngSignature)) != 0) {
+    return false;
+  }
+
+  uint32_t png_width = 0;
+  uint32_t png_height = 0;
+  uint8_t bit_depth = 0;
+  uint8_t color_type = 0;
+  bool saw_ihdr = false;
+  bool saw_iend = false;
+  std::vector<uint8_t> idat;
+
+  size_t offset = sizeof(kPngSignature);
+  while (offset + 12 <= png_size) {
+    const uint32_t length = ReadBigEndianUint32(png + offset);
+    if (length > png_size - offset - 12) return false;
+
+    const uint8_t* type = png + offset + 4;
+    const uint8_t* chunk = png + offset + 8;
+    if (memcmp(type, "IHDR", 4) == 0) {
+      if (length != 13 || saw_ihdr) return false;
+      png_width = ReadBigEndianUint32(chunk);
+      png_height = ReadBigEndianUint32(chunk + 4);
+      bit_depth = chunk[8];
+      color_type = chunk[9];
+      if (chunk[10] != 0 || chunk[11] != 0 || chunk[12] != 0) return false;
+      saw_ihdr = true;
+    } else if (memcmp(type, "IDAT", 4) == 0) {
+      if (!saw_ihdr) return false;
+      if (idat.size() > std::numeric_limits<size_t>::max() - length) {
+        return false;
+      }
+      idat.insert(idat.end(), chunk, chunk + length);
+    } else if (memcmp(type, "IEND", 4) == 0) {
+      saw_iend = true;
+      break;
+    }
+
+    offset += static_cast<size_t>(length) + 12;
+  }
+
+  if (!saw_ihdr || !saw_iend || idat.empty() || png_width == 0 ||
+      png_height == 0 || bit_depth != 8 ||
+      png_width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+      png_height > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+
+  uint32_t channels = 0;
+  switch (color_type) {
+    case 0:
+      channels = 1;
+      break;
+    case 2:
+      channels = 3;
+      break;
+    case 4:
+      channels = 2;
+      break;
+    case 6:
+      channels = 4;
+      break;
+    default:
+      return false;
+  }
+
+  const uint64_t row_bytes64 =
+      static_cast<uint64_t>(png_width) * static_cast<uint64_t>(channels);
+  const uint64_t inflated_size64 =
+      (row_bytes64 + 1) * static_cast<uint64_t>(png_height);
+  const uint64_t rgba_size64 =
+      static_cast<uint64_t>(png_width) * static_cast<uint64_t>(png_height) * 4;
+  if (row_bytes64 > std::numeric_limits<uint32_t>::max() ||
+      inflated_size64 > std::numeric_limits<uint32_t>::max() ||
+      rgba_size64 > std::numeric_limits<uint32_t>::max() ||
+      idat.size() > std::numeric_limits<uLong>::max()) {
+    return false;
+  }
+
+  std::vector<uint8_t> inflated(static_cast<size_t>(inflated_size64));
+  uLongf inflated_size = static_cast<uLongf>(inflated.size());
+  if (uncompress(inflated.data(),
+                 &inflated_size,
+                 idat.data(),
+                 static_cast<uLong>(idat.size())) != Z_OK ||
+      inflated_size != inflated.size()) {
+    return false;
+  }
+
+  const size_t row_bytes = static_cast<size_t>(row_bytes64);
+  std::vector<uint8_t> pixels(row_bytes * static_cast<size_t>(png_height));
+  const uint8_t bpp = static_cast<uint8_t>(channels);
+  for (uint32_t row = 0; row < png_height; ++row) {
+    const uint8_t* src =
+        inflated.data() + static_cast<size_t>(row) * (row_bytes + 1);
+    const uint8_t filter = src[0];
+    ++src;
+    uint8_t* dst = pixels.data() + static_cast<size_t>(row) * row_bytes;
+    const uint8_t* prev = row == 0
+                              ? nullptr
+                              : pixels.data() +
+                                    static_cast<size_t>(row - 1) * row_bytes;
+
+    for (size_t i = 0; i < row_bytes; ++i) {
+      const uint8_t left = i >= bpp ? dst[i - bpp] : 0;
+      const uint8_t up = prev ? prev[i] : 0;
+      const uint8_t up_left = prev && i >= bpp ? prev[i - bpp] : 0;
+      uint8_t predictor = 0;
+      switch (filter) {
+        case 0:
+          predictor = 0;
+          break;
+        case 1:
+          predictor = left;
+          break;
+        case 2:
+          predictor = up;
+          break;
+        case 3:
+          predictor = static_cast<uint8_t>(
+              (static_cast<unsigned int>(left) + static_cast<unsigned int>(up)) / 2);
+          break;
+        case 4:
+          predictor = PaethPredictor(left, up, up_left);
+          break;
+        default:
+          return false;
+      }
+      dst[i] = static_cast<uint8_t>(src[i] + predictor);
+    }
+  }
+
+  rgba->assign(static_cast<size_t>(rgba_size64), 0);
+  for (uint32_t row = 0; row < png_height; ++row) {
+    const uint8_t* src = pixels.data() + static_cast<size_t>(row) * row_bytes;
+    uint8_t* dst =
+        rgba->data() + static_cast<size_t>(row) * static_cast<size_t>(png_width) * 4;
+    for (uint32_t col = 0; col < png_width; ++col) {
+      if (color_type == 0) {
+        const uint8_t gray = src[col];
+        dst[col * 4 + 0] = gray;
+        dst[col * 4 + 1] = gray;
+        dst[col * 4 + 2] = gray;
+        dst[col * 4 + 3] = 255;
+      } else if (color_type == 2) {
+        const uint8_t* pixel = src + static_cast<size_t>(col) * 3;
+        dst[col * 4 + 0] = pixel[0];
+        dst[col * 4 + 1] = pixel[1];
+        dst[col * 4 + 2] = pixel[2];
+        dst[col * 4 + 3] = 255;
+      } else if (color_type == 4) {
+        const uint8_t* pixel = src + static_cast<size_t>(col) * 2;
+        dst[col * 4 + 0] = pixel[0];
+        dst[col * 4 + 1] = pixel[0];
+        dst[col * 4 + 2] = pixel[0];
+        dst[col * 4 + 3] = pixel[1];
+      } else {
+        const uint8_t* pixel = src + static_cast<size_t>(col) * 4;
+        dst[col * 4 + 0] = pixel[0];
+        dst[col * 4 + 1] = pixel[1];
+        dst[col * 4 + 2] = pixel[2];
+        dst[col * 4 + 3] = pixel[3];
+      }
+    }
+  }
+
+  *width = static_cast<int>(png_width);
+  *height = static_cast<int>(png_height);
+  return true;
 }
 
 FS_RECTF MakePdfRect(double left, double bottom, double right, double top) {
@@ -2175,9 +2406,7 @@ int wasm_pdf_add_rgba_image_page(uintptr_t handle,
     return 0;
   }
   if (!rgba || image_width <= 0 || image_height <= 0 ||
-      !std::isfinite(x) || !std::isfinite(y) ||
-      !std::isfinite(display_width) || !std::isfinite(display_height) ||
-      display_width <= 0 || display_height <= 0) {
+      !IsValidImagePlacement(x, y, display_width, display_height)) {
     SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
     return 0;
   }
@@ -2278,6 +2507,125 @@ int wasm_pdf_add_rgba_image_page(uintptr_t handle,
   FPDF_ClosePage(page);
   ClearLastError();
   return 1;
+}
+
+int wasm_pdf_add_jpeg_image_page(uintptr_t handle,
+                                 int page_index,
+                                 const uint8_t* jpeg,
+                                 uint32_t jpeg_size,
+                                 double x,
+                                 double y,
+                                 double display_width,
+                                 double display_height) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!jpeg || jpeg_size == 0 ||
+      !IsValidImagePlacement(x, y, display_width, display_height)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_PAGEOBJECT image_obj = FPDFPageObj_NewImageObj(doc);
+  if (!image_obj) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_CREATE_IMAGE_FAILED);
+    return 0;
+  }
+
+  MemoryFileAccess file{jpeg, jpeg_size};
+  FPDF_FILEACCESS access{};
+  access.m_FileLen = jpeg_size;
+  access.m_GetBlock = GetMemoryFileBlock;
+  access.m_Param = &file;
+  FPDF_PAGE pages[] = {page};
+  if (!FPDFImageObj_LoadJpegFileInline(pages, 1, image_obj, &access)) {
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_LOAD_JPEG_FAILED);
+    return 0;
+  }
+
+  if (!FPDFImageObj_SetMatrix(image_obj,
+                              display_width,
+                              0,
+                              0,
+                              display_height,
+                              x,
+                              y)) {
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_IMAGE_MATRIX_FAILED);
+    return 0;
+  }
+
+  if (!FPDFPage_InsertObject(page, image_obj)) {
+    FPDFPageObj_Destroy(image_obj);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
+    return 0;
+  }
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return 0;
+  }
+
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_add_png_image_page(uintptr_t handle,
+                                int page_index,
+                                const uint8_t* png,
+                                uint32_t png_size,
+                                double x,
+                                double y,
+                                double display_width,
+                                double display_height) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!png || png_size == 0 ||
+      !IsValidImagePlacement(x, y, display_width, display_height)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  std::vector<uint8_t> rgba;
+  int image_width = 0;
+  int image_height = 0;
+  if (!DecodePngToRgba(png, png_size, &rgba, &image_width, &image_height)) {
+    SetLastError(WASM_PDF_ERROR_DECODE_PNG_FAILED);
+    return 0;
+  }
+
+  return wasm_pdf_add_rgba_image_page(handle,
+                                      page_index,
+                                      rgba.data(),
+                                      static_cast<uint32_t>(rgba.size()),
+                                      image_width,
+                                      image_height,
+                                      x,
+                                      y,
+                                      display_width,
+                                      display_height);
 }
 
 int wasm_pdf_render_page_rgba(uintptr_t handle,

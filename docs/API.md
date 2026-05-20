@@ -102,8 +102,12 @@ The matrix must be invertible.
 
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)` inserts page text. `text` must be valid UTF-8.
 - `wasm_pdf_add_rgba_image_page(handle, pageIndex, rgbaPtr, rgbaSize, imageWidth, imageHeight, x, y, displayWidth, displayHeight)` inserts an image from row-major 8-bit RGBA pixels. `rgbaSize` must equal `imageWidth * imageHeight * 4`.
+- `wasm_pdf_add_jpeg_image_page(handle, pageIndex, jpegPtr, jpegSize, x, y, displayWidth, displayHeight)` inserts encoded JPEG bytes using PDFium's JPEG image path.
+- `wasm_pdf_add_png_image_page(handle, pageIndex, pngPtr, pngSize, x, y, displayWidth, displayHeight)` decodes PNG bytes to RGBA and inserts the image.
 
 RGBA convention is `0xAARRGGBB`.
+
+PNG support is intentionally small: non-interlaced, 8-bit grayscale, RGB, grayscale-alpha, and RGBA PNGs. Palette, interlaced, 16-bit, and uncommon PNG features are rejected with error code `51`.
 
 ## Annotations
 
@@ -193,3 +197,5 @@ Common render flag:
 - `47`: set annotation text failed
 - `48`: set annotation border failed
 - `49`: generate annotation appearance failed
+- `50`: load JPEG failed
+- `51`: decode PNG failed

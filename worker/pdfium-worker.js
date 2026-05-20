@@ -51,6 +51,8 @@ const ERROR_NAMES = Object.freeze({
   47: "set_annotation_text_failed",
   48: "set_annotation_border_failed",
   49: "generate_annotation_ap_failed",
+  50: "load_jpeg_failed",
+  51: "decode_png_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -211,7 +213,13 @@ async function addText(payload = {}) {
 async function addImage(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
-  const rgbaBytes = asUint8Array(payload.rgbaBytes, "payload.rgbaBytes");
+  const inferredImageFormat = payload.jpegBytes ? "jpeg" : payload.pngBytes ? "png" : "rgba";
+  const imageFormat = stringOrDefault(payload.imageFormat, inferredImageFormat);
+  const encodedImageBytes = payload.imageBytes || payload.jpegBytes || payload.pngBytes;
+  const imageBytes =
+    imageFormat === "rgba"
+      ? asUint8Array(payload.rgbaBytes, "payload.rgbaBytes")
+      : asUint8Array(encodedImageBytes, "payload.imageBytes");
 
   let inputPtr = 0;
   let imagePtr = 0;
@@ -222,10 +230,10 @@ async function addImage(payload = {}) {
 
   try {
     inputPtr = mod._malloc(inputBytes.length);
-    imagePtr = mod._malloc(rgbaBytes.length);
+    imagePtr = mod._malloc(imageBytes.length);
     if (!inputPtr || !imagePtr) throw new PdfiumWorkerError("Unable to allocate worker input buffers", 3);
     mod.HEAPU8.set(inputBytes, inputPtr);
-    mod.HEAPU8.set(rgbaBytes, imagePtr);
+    mod.HEAPU8.set(imageBytes, imagePtr);
 
     handle = mod.ccall(
       "wasm_pdf_open_from_bytes",
@@ -235,23 +243,60 @@ async function addImage(payload = {}) {
     );
     if (!handle) throwPdfiumError(mod, "Unable to open PDF");
 
-    const added = mod.ccall(
-      "wasm_pdf_add_rgba_image_page",
-      "number",
-      ["number", "number", "number", "number", "number", "number", "number", "number", "number", "number"],
-      [
-        handle,
-        numberOrDefault(payload.pageIndex, 0),
-        imagePtr,
-        rgbaBytes.length,
-        numberOrDefault(payload.imageWidth, 0),
-        numberOrDefault(payload.imageHeight, 0),
-        numberOrDefault(payload.x, 0),
-        numberOrDefault(payload.y, 0),
-        numberOrDefault(payload.displayWidth, 0),
-        numberOrDefault(payload.displayHeight, 0),
-      ]
-    );
+    let added = 0;
+    if (imageFormat === "rgba") {
+      added = mod.ccall(
+        "wasm_pdf_add_rgba_image_page",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number", "number", "number", "number"],
+        [
+          handle,
+          numberOrDefault(payload.pageIndex, 0),
+          imagePtr,
+          imageBytes.length,
+          numberOrDefault(payload.imageWidth, 0),
+          numberOrDefault(payload.imageHeight, 0),
+          numberOrDefault(payload.x, 0),
+          numberOrDefault(payload.y, 0),
+          numberOrDefault(payload.displayWidth, 0),
+          numberOrDefault(payload.displayHeight, 0),
+        ]
+      );
+    } else if (imageFormat === "jpeg" || imageFormat === "jpg") {
+      added = mod.ccall(
+        "wasm_pdf_add_jpeg_image_page",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number", "number"],
+        [
+          handle,
+          numberOrDefault(payload.pageIndex, 0),
+          imagePtr,
+          imageBytes.length,
+          numberOrDefault(payload.x, 0),
+          numberOrDefault(payload.y, 0),
+          numberOrDefault(payload.displayWidth, 0),
+          numberOrDefault(payload.displayHeight, 0),
+        ]
+      );
+    } else if (imageFormat === "png") {
+      added = mod.ccall(
+        "wasm_pdf_add_png_image_page",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number", "number"],
+        [
+          handle,
+          numberOrDefault(payload.pageIndex, 0),
+          imagePtr,
+          imageBytes.length,
+          numberOrDefault(payload.x, 0),
+          numberOrDefault(payload.y, 0),
+          numberOrDefault(payload.displayWidth, 0),
+          numberOrDefault(payload.displayHeight, 0),
+        ]
+      );
+    } else {
+      throw new PdfiumWorkerError(`Unsupported image format: ${imageFormat}`, 2);
+    }
     if (!added) throwPdfiumError(mod, "Unable to add image");
 
     outPtrPtr = mod._malloc(4);

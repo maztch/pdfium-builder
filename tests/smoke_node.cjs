@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -51,6 +52,8 @@ async function main() {
   let sourceHandle = 0;
   let invalidTextPtr = 0;
   let imagePtr = 0;
+  let jpegPtr = 0;
+  let pngPtr = 0;
   let metadataPtrPtr = 0;
   let metadataSizePtr = 0;
   let metadataPtr = 0;
@@ -379,7 +382,56 @@ async function main() {
     assert.equal(addedImage, 1, 'add RGBA image should succeed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid image insert should clear last error');
 
-    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 2, 'text and image insert should add two page objects');
+    const invalidJpegArgs = mod.ccall(
+      'wasm_pdf_add_jpeg_image_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 0, 0, 130, 120, 48, 48]
+    );
+    assert.equal(invalidJpegArgs, 0, 'invalid JPEG arguments should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid JPEG arguments should report invalid argument');
+
+    const jpegBytes = fs.readFileSync(
+      path.join(__dirname, '..', 'third_party', 'pdfium', 'pdfium', 'testing', 'resources', 'mona_lisa.jpg')
+    );
+    jpegPtr = mod._malloc(jpegBytes.length);
+    assert.notEqual(jpegPtr, 0, 'JPEG malloc failed');
+    mod.HEAPU8.set(jpegBytes, jpegPtr);
+    const addedJpeg = mod.ccall(
+      'wasm_pdf_add_jpeg_image_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, jpegPtr, jpegBytes.length, 130, 120, 48, 48]
+    );
+    assert.equal(addedJpeg, 1, 'add JPEG image should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid JPEG insert should clear last error');
+
+    const invalidPng = mod.ccall(
+      'wasm_pdf_add_png_image_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, invalidTextPtr, 3, 188, 120, 48, 48]
+    );
+    assert.equal(invalidPng, 0, 'invalid PNG bytes should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 51, 'invalid PNG should report PNG decode failure');
+
+    const pngBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    pngPtr = mod._malloc(pngBytes.length);
+    assert.notEqual(pngPtr, 0, 'PNG malloc failed');
+    mod.HEAPU8.set(pngBytes, pngPtr);
+    const addedPng = mod.ccall(
+      'wasm_pdf_add_png_image_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, pngPtr, pngBytes.length, 188, 120, 48, 48]
+    );
+    assert.equal(addedPng, 1, 'add PNG image should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid PNG insert should clear last error');
+
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 4, 'text and image inserts should add four page objects');
 
     const gotTextObject = mod.ccall(
       'wasm_pdf_get_page_object_info',
@@ -451,7 +503,7 @@ async function main() {
       [handle, 0, 1]
     );
     assert.equal(deletedObject, 1, 'delete page object should succeed');
-    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 1, 'delete page object should remove one object');
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 3, 'delete page object should remove one object');
 
     const invalidLink = mod.ccall(
       'wasm_pdf_add_link_annotation',
@@ -604,7 +656,7 @@ async function main() {
     );
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
-    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF should persist deleted object state');
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 3, 'saved PDF should persist deleted object state');
     assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 5, 'saved PDF should persist annotations');
     assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
     assert.equal(mod.ccall(
@@ -798,6 +850,8 @@ async function main() {
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
     if (invalidTextPtr) mod._free(invalidTextPtr);
     if (imagePtr) mod._free(imagePtr);
+    if (jpegPtr) mod._free(jpegPtr);
+    if (pngPtr) mod._free(pngPtr);
     if (typePtr) mod._free(typePtr);
     if (widthPtr) mod._free(widthPtr);
     if (heightPtr) mod._free(heightPtr);
