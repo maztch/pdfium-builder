@@ -86,7 +86,7 @@ Prevent regressions when changing wrapper/build flags.
 Most browser apps should avoid main-thread PDF processing.
 
 ### Steps
-1. Provide ready-to-use worker module in repo.
-2. Standardize message protocol (`type`, `payload`, `error`).
+1. Done: Provide ready-to-use worker module in repo.
+2. Done: Standardize message protocol (`id`, `type`, `payload`, `ok`, `error`).
 3. Add cancellation/timeout support for long jobs.
 4. Document bundler-specific worker setup (Vite/Webpack/Next).

@@ -10,6 +10,7 @@ Build PDFium to WebAssembly, expose custom C/C++ wrapper APIs, and call them fro
 - `wasm/pdfium_edit_wrapper.cc`: exported editing API wrapper
 - `wasm/pdfium_wasm_platform_stub.cc`: wasm platform shim needed at link time
 - `examples/browser_add_text_example.js`: browser usage example
+- `worker/pdfium-worker.js`: reusable background worker for add-text jobs
 - `dist/`: generated outputs (`pdfium.js`, `pdfium.wasm`)
 
 ## Installation
@@ -110,6 +111,25 @@ From `wasm/pdfium_edit_wrapper.cc`:
 5. Create a Blob and download/save
 
 See: `examples/browser_add_text_example.js`
+
+## Worker usage flow
+
+Use `worker/pdfium-worker.js` for background processing. The worker accepts request messages shaped as `{ id, type: "addText", payload }` and responds with `{ id, type, ok, payload }` or `{ id, type, ok: false, error }`.
+
+```js
+const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url));
+
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addText",
+    payload: { pdfBytes: inputBytes.buffer, text: "Hello from worker" },
+  },
+  [inputBytes.buffer]
+);
+```
+
+See: `docs/JS_WORKER_BACKGROUND.md`
 
 ## Parameters you can tune (to improve build/output)
 
