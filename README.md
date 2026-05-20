@@ -54,6 +54,16 @@ Outputs:
 - `dist/pdfium.js`
 - `dist/pdfium.wasm`
 
+## Smoke test
+
+After building, run the dependency-free Node smoke test:
+
+```bash
+node tests/smoke_node.cjs
+```
+
+The test creates a minimal one-page PDF in memory, opens it through the WASM wrapper, adds text, saves a copy, and verifies the saved PDF can be reopened.
+
 ## Exported wrapper functions
 
 From `wasm/pdfium_edit_wrapper.cc`:
