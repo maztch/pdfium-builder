@@ -57,6 +57,46 @@ console.log(summary.pageCount, summary.pages[0]?.width, summary.hasAttachments);
 
 Use this before more specific read APIs when an app needs to populate document-level UI state.
 
+## Mutate Pages
+
+```js
+const inserted = await requestPdfWorker(
+  worker,
+  "insertBlankPage",
+  {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 1,
+    width: 612,
+    height: 792,
+  },
+  [inputBytes.buffer]
+);
+
+const rotated = await requestPdfWorker(
+  worker,
+  "setPageRotation",
+  {
+    pdfBytes: new Uint8Array(inserted.pdfBytes).slice().buffer,
+    pageIndex: 0,
+    rotation: 1,
+  }
+);
+
+const imported = await requestPdfWorker(
+  worker,
+  "importPages",
+  {
+    pdfBytes: new Uint8Array(rotated.pdfBytes).slice().buffer,
+    sourcePdfBytes: sourceBytes.buffer,
+    pageRange: "1-2",
+    destinationPageIndex: 2,
+  },
+  [sourceBytes.buffer]
+);
+```
+
+Use `copyPage` for a single zero-based source page index. Use `setPageBox`, `setPageSize`, and `deletePage` for geometry and removal.
+
 ## Add Text
 
 ```js

@@ -69,6 +69,89 @@ Returns a document summary:
 }
 ```
 
+## `insertBlankPage`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Destination PDF. |
+| `pageIndex` | number | Yes | `0` | Insert position. A value larger than the last page appends at native level only when accepted by PDFium. |
+| `width` | number | Yes | `0` | New page width in PDF user-space units. |
+| `height` | number | Yes | `0` | New page height in PDF user-space units. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `deletePage`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Destination PDF. |
+| `pageIndex` | number | Yes | `-1` | Zero-based page index to delete. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `copyPage`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Destination PDF. |
+| `sourcePdfBytes` | `ArrayBuffer` or typed array | No | `pdfBytes` | Source PDF. Defaults to a second open handle for the destination bytes. |
+| `sourcePageIndex` | number | No | `0` | Zero-based source page index. |
+| `destinationPageIndex` | number | No | `0` | Zero-based insertion index in destination PDF. |
+| `password` | string | No | `""` | Destination PDF password. |
+| `sourcePassword` | string | No | `password` | Source PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `importPages`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Destination PDF. |
+| `sourcePdfBytes` | `ArrayBuffer` or typed array | No | `pdfBytes` | Source PDF. Defaults to a second open handle for the destination bytes. |
+| `pageRange` | string | No | `""` | One-based PDFium range like `"1,3,5-7"`. Empty imports all pages. |
+| `destinationPageIndex` | number | No | `0` | Zero-based insertion index in destination PDF. |
+| `password` | string | No | `""` | Destination PDF password. |
+| `sourcePassword` | string | No | `password` | Source PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `setPageRotation`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `rotation` | number | Yes | `-1` | `0`, `1`, `2`, or `3` for 0, 90, 180, or 270 degrees clockwise. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `setPageBox`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `boxType` | number | Yes | `0` | `0` media, `1` crop, `2` bleed, `3` trim, `4` art. |
+| `left`, `bottom`, `right`, `top` | number | Yes | `0` | PDF user-space rectangle. `right > left` and `top > bottom` are required. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `setPageSize`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `width` | number | Yes | `0` | New media box width. |
+| `height` | number | Yes | `0` | New media box height. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
 ## `addText`
 
 | Field | Type | Required | Default | Notes |

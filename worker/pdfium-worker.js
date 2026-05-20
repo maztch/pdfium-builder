@@ -100,6 +100,37 @@ function throwPdfiumError(mod, message) {
   throw new PdfiumWorkerError(`${message} (${name})`, code);
 }
 
+function saveDocumentBytes(mod, handle) {
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+
+  try {
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 function asUint8Array(value, label = "payload.pdfBytes") {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -1377,6 +1408,230 @@ async function queryDocument(payload = {}) {
   }
 }
 
+async function runPageMutation(payload = {}, mutate) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    mutate(mod, handle);
+    return saveDocumentBytes(mod, handle);
+  } finally {
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+  }
+}
+
+async function insertBlankPage(payload = {}) {
+  return runPageMutation(payload, (mod, handle) => {
+    const inserted = mod.ccall(
+      "wasm_pdf_insert_blank_page",
+      "number",
+      ["number", "number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        numberOrDefault(payload.width, 0),
+        numberOrDefault(payload.height, 0),
+      ]
+    );
+    if (!inserted) throwPdfiumError(mod, "Unable to insert blank page");
+  });
+}
+
+async function deletePage(payload = {}) {
+  return runPageMutation(payload, (mod, handle) => {
+    const deleted = mod.ccall(
+      "wasm_pdf_delete_page",
+      "number",
+      ["number", "number"],
+      [handle, numberOrDefault(payload.pageIndex, -1)]
+    );
+    if (!deleted) throwPdfiumError(mod, "Unable to delete page");
+  });
+}
+
+async function setPageRotation(payload = {}) {
+  return runPageMutation(payload, (mod, handle) => {
+    const updated = mod.ccall(
+      "wasm_pdf_set_page_rotation",
+      "number",
+      ["number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        numberOrDefault(payload.rotation, -1),
+      ]
+    );
+    if (!updated) throwPdfiumError(mod, "Unable to set page rotation");
+  });
+}
+
+async function setPageBox(payload = {}) {
+  return runPageMutation(payload, (mod, handle) => {
+    const updated = mod.ccall(
+      "wasm_pdf_set_page_box",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        numberOrDefault(payload.boxType, 0),
+        numberOrDefault(payload.left, 0),
+        numberOrDefault(payload.bottom, 0),
+        numberOrDefault(payload.right, 0),
+        numberOrDefault(payload.top, 0),
+      ]
+    );
+    if (!updated) throwPdfiumError(mod, "Unable to set page box");
+  });
+}
+
+async function setPageSize(payload = {}) {
+  return runPageMutation(payload, (mod, handle) => {
+    const updated = mod.ccall(
+      "wasm_pdf_set_page_size",
+      "number",
+      ["number", "number", "number", "number"],
+      [
+        handle,
+        numberOrDefault(payload.pageIndex, 0),
+        numberOrDefault(payload.width, 0),
+        numberOrDefault(payload.height, 0),
+      ]
+    );
+    if (!updated) throwPdfiumError(mod, "Unable to set page size");
+  });
+}
+
+async function copyPage(payload = {}) {
+  const mod = await getModule();
+  const dstBytes = asUint8Array(payload.pdfBytes);
+  const srcBytes = payload.sourcePdfBytes === undefined
+    ? dstBytes
+    : asUint8Array(payload.sourcePdfBytes, "payload.sourcePdfBytes");
+
+  let dstPtr = 0;
+  let srcPtr = 0;
+  let dstHandle = 0;
+  let srcHandle = 0;
+
+  try {
+    dstPtr = mod._malloc(dstBytes.length);
+    srcPtr = mod._malloc(srcBytes.length);
+    if (!dstPtr || !srcPtr) throw new PdfiumWorkerError("Unable to allocate page copy buffers", 3);
+    mod.HEAPU8.set(dstBytes, dstPtr);
+    mod.HEAPU8.set(srcBytes, srcPtr);
+
+    dstHandle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [dstPtr, dstBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!dstHandle) throwPdfiumError(mod, "Unable to open destination PDF");
+
+    srcHandle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [srcPtr, srcBytes.length, stringOrDefault(payload.sourcePassword, stringOrDefault(payload.password, ""))]
+    );
+    if (!srcHandle) throwPdfiumError(mod, "Unable to open source PDF");
+
+    const copied = mod.ccall(
+      "wasm_pdf_copy_page",
+      "number",
+      ["number", "number", "number", "number"],
+      [
+        srcHandle,
+        numberOrDefault(payload.sourcePageIndex, 0),
+        dstHandle,
+        numberOrDefault(payload.destinationPageIndex, 0),
+      ]
+    );
+    if (!copied) throwPdfiumError(mod, "Unable to copy page");
+
+    return saveDocumentBytes(mod, dstHandle);
+  } finally {
+    if (srcHandle) mod.ccall("wasm_pdf_close", null, ["number"], [srcHandle]);
+    if (dstHandle) mod.ccall("wasm_pdf_close", null, ["number"], [dstHandle]);
+    if (srcPtr) mod._free(srcPtr);
+    if (dstPtr) mod._free(dstPtr);
+  }
+}
+
+async function importPages(payload = {}) {
+  const mod = await getModule();
+  const dstBytes = asUint8Array(payload.pdfBytes);
+  const srcBytes = payload.sourcePdfBytes === undefined
+    ? dstBytes
+    : asUint8Array(payload.sourcePdfBytes, "payload.sourcePdfBytes");
+
+  let dstPtr = 0;
+  let srcPtr = 0;
+  let dstHandle = 0;
+  let srcHandle = 0;
+
+  try {
+    dstPtr = mod._malloc(dstBytes.length);
+    srcPtr = mod._malloc(srcBytes.length);
+    if (!dstPtr || !srcPtr) throw new PdfiumWorkerError("Unable to allocate page import buffers", 3);
+    mod.HEAPU8.set(dstBytes, dstPtr);
+    mod.HEAPU8.set(srcBytes, srcPtr);
+
+    dstHandle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [dstPtr, dstBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!dstHandle) throwPdfiumError(mod, "Unable to open destination PDF");
+
+    srcHandle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [srcPtr, srcBytes.length, stringOrDefault(payload.sourcePassword, stringOrDefault(payload.password, ""))]
+    );
+    if (!srcHandle) throwPdfiumError(mod, "Unable to open source PDF");
+
+    const imported = mod.ccall(
+      "wasm_pdf_import_pages",
+      "number",
+      ["number", "string", "number", "number"],
+      [
+        srcHandle,
+        stringOrDefault(payload.pageRange, ""),
+        dstHandle,
+        numberOrDefault(payload.destinationPageIndex, 0),
+      ]
+    );
+    if (!imported) throwPdfiumError(mod, "Unable to import pages");
+
+    return saveDocumentBytes(mod, dstHandle);
+  } finally {
+    if (srcHandle) mod.ccall("wasm_pdf_close", null, ["number"], [srcHandle]);
+    if (dstHandle) mod.ccall("wasm_pdf_close", null, ["number"], [dstHandle]);
+    if (srcPtr) mod._free(srcPtr);
+    if (dstPtr) mod._free(dstPtr);
+  }
+}
+
 async function queryAttachments(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -1869,6 +2124,27 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "queryDocument") {
     return queryDocument(message.payload);
+  }
+  if (message.type === "insertBlankPage") {
+    return insertBlankPage(message.payload);
+  }
+  if (message.type === "deletePage") {
+    return deletePage(message.payload);
+  }
+  if (message.type === "copyPage") {
+    return copyPage(message.payload);
+  }
+  if (message.type === "importPages") {
+    return importPages(message.payload);
+  }
+  if (message.type === "setPageRotation") {
+    return setPageRotation(message.payload);
+  }
+  if (message.type === "setPageBox") {
+    return setPageBox(message.payload);
+  }
+  if (message.type === "setPageSize") {
+    return setPageSize(message.payload);
   }
   if (message.type === "queryAttachments") {
     return queryAttachments(message.payload);

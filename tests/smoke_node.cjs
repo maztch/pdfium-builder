@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { Worker } = require('node:worker_threads');
 
 const distDir = path.join(__dirname, '..', 'dist');
 
@@ -36,6 +37,62 @@ function createMinimalPdf() {
   pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
 
   return new Uint8Array(Buffer.from(pdf, 'ascii'));
+}
+
+function createPdfiumNodeWorker() {
+  const workerUrl = pathToFileURL(path.join(__dirname, '..', 'worker', 'pdfium-worker.js')).href;
+  const source = `
+    import { parentPort } from "node:worker_threads";
+
+    globalThis.self = {
+      location: { href: ${JSON.stringify(workerUrl)} },
+      postMessage(message, transferables) {
+        parentPort.postMessage(message, transferables || []);
+      },
+      set onmessage(handler) {
+        parentPort.on("message", (data) => handler({ data }));
+      }
+    };
+
+    await import(${JSON.stringify(workerUrl)});
+  `;
+
+  return new Worker(source, { eval: true, type: 'module' });
+}
+
+function requestPdfWorker(worker, type, payload, transfer = []) {
+  return new Promise((resolve, reject) => {
+    const id = `${type}-${Math.random().toString(16).slice(2)}`;
+
+    function cleanup() {
+      worker.off('message', onMessage);
+      worker.off('error', onError);
+    }
+
+    function onError(error) {
+      cleanup();
+      reject(error);
+    }
+
+    function onMessage(message) {
+      if (message?.id !== id) return;
+      cleanup();
+
+      if (!message.ok) {
+        const error = new Error(message.error?.message || 'PDF worker request failed');
+        error.code = message.error?.code;
+        error.errorName = message.error?.name;
+        reject(error);
+        return;
+      }
+
+      resolve(message.payload);
+    }
+
+    worker.on('message', onMessage);
+    worker.on('error', onError);
+    worker.postMessage({ id, type, payload }, transfer);
+  });
 }
 
 function parseOutlineItems(bytes) {
@@ -232,6 +289,7 @@ async function main() {
   let renderPtr = 0;
   let renderPtrPtr = 0;
   let renderSizePtr = 0;
+  let worker = null;
   let typePtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
@@ -1348,8 +1406,154 @@ async function main() {
     attachmentFilePtr = 0;
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
+    worker = createPdfiumNodeWorker();
+    let workerBytes = createMinimalPdf();
+    let workerResult = await requestPdfWorker(
+      worker,
+      'insertBlankPage',
+      {
+        pdfBytes: workerBytes.buffer,
+        pageIndex: 1,
+        width: 200,
+        height: 300,
+      },
+      [workerBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    let workerQueryBytes = workerBytes.slice();
+    let workerSummary = await requestPdfWorker(
+      worker,
+      'queryDocument',
+      {
+        pdfBytes: workerQueryBytes.buffer,
+        includeMetadata: false,
+        includeOutlineSummary: false,
+        includeAttachmentSummary: false,
+      },
+      [workerQueryBytes.buffer]
+    );
+    assert.equal(workerSummary.pageCount, 2, 'worker insertBlankPage should add a page');
+    assert.equal(workerSummary.pages[1].width, 200, 'worker inserted page width should match');
+    assert.equal(workerSummary.pages[1].height, 300, 'worker inserted page height should match');
+
+    workerResult = await requestPdfWorker(
+      worker,
+      'setPageRotation',
+      {
+        pdfBytes: workerBytes.buffer,
+        pageIndex: 0,
+        rotation: 2,
+      },
+      [workerBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    workerResult = await requestPdfWorker(
+      worker,
+      'setPageBox',
+      {
+        pdfBytes: workerBytes.buffer,
+        pageIndex: 0,
+        boxType: 1,
+        left: 10,
+        bottom: 20,
+        right: 300,
+        top: 400,
+      },
+      [workerBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    workerResult = await requestPdfWorker(
+      worker,
+      'setPageSize',
+      {
+        pdfBytes: workerBytes.buffer,
+        pageIndex: 1,
+        width: 250,
+        height: 350,
+      },
+      [workerBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    workerQueryBytes = workerBytes.slice();
+    workerSummary = await requestPdfWorker(
+      worker,
+      'queryDocument',
+      {
+        pdfBytes: workerQueryBytes.buffer,
+        includeMetadata: false,
+        includeOutlineSummary: false,
+        includeAttachmentSummary: false,
+      },
+      [workerQueryBytes.buffer]
+    );
+    assert.equal(workerSummary.pages[0].rotation, 2, 'worker setPageRotation should persist');
+    assert.equal(workerSummary.pages[0].boxes.crop.left, 10, 'worker setPageBox crop left should persist');
+    assert.equal(workerSummary.pages[0].boxes.crop.bottom, 20, 'worker setPageBox crop bottom should persist');
+    assert.equal(workerSummary.pages[0].boxes.crop.right, 300, 'worker setPageBox crop right should persist');
+    assert.equal(workerSummary.pages[0].boxes.crop.top, 400, 'worker setPageBox crop top should persist');
+    assert.equal(workerSummary.pages[1].width, 250, 'worker setPageSize width should persist');
+    assert.equal(workerSummary.pages[1].height, 350, 'worker setPageSize height should persist');
+
+    let sourceBytes = createMinimalPdf();
+    workerResult = await requestPdfWorker(
+      worker,
+      'copyPage',
+      {
+        pdfBytes: workerBytes.buffer,
+        sourcePdfBytes: sourceBytes.buffer,
+        sourcePageIndex: 0,
+        destinationPageIndex: 2,
+      },
+      [workerBytes.buffer, sourceBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    sourceBytes = createMinimalPdf();
+    workerResult = await requestPdfWorker(
+      worker,
+      'importPages',
+      {
+        pdfBytes: workerBytes.buffer,
+        sourcePdfBytes: sourceBytes.buffer,
+        pageRange: '1',
+        destinationPageIndex: 3,
+      },
+      [workerBytes.buffer, sourceBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    workerResult = await requestPdfWorker(
+      worker,
+      'deletePage',
+      {
+        pdfBytes: workerBytes.buffer,
+        pageIndex: 3,
+      },
+      [workerBytes.buffer]
+    );
+    workerBytes = new Uint8Array(workerResult.pdfBytes);
+
+    workerQueryBytes = workerBytes.slice();
+    workerSummary = await requestPdfWorker(
+      worker,
+      'queryDocument',
+      {
+        pdfBytes: workerQueryBytes.buffer,
+        includeMetadata: false,
+        includeOutlineSummary: false,
+        includeAttachmentSummary: false,
+      },
+      [workerQueryBytes.buffer]
+    );
+    assert.equal(workerSummary.pageCount, 3, 'worker copy/import/delete page flow should leave three pages');
+
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
   } finally {
+    if (worker) await worker.terminate();
     if (searchPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
     if (renderPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     if (textPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);

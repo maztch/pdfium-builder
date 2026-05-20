@@ -51,6 +51,52 @@ Use `queryDocument` to get a consolidated document summary:
 }
 ```
 
+Use page mutation messages for page structure and geometry edits:
+
+```js
+{
+  id: "request-insert-page",
+  type: "insertBlankPage",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 1,
+    width: 612,
+    height: 792,
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-rotate-page",
+  type: "setPageRotation",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    rotation: 1,
+    password: ""
+  }
+}
+```
+
+For page copy/import, `pdfBytes` is the destination PDF and `sourcePdfBytes` is the source PDF:
+
+```js
+{
+  id: "request-copy-page",
+  type: "copyPage",
+  payload: {
+    pdfBytes: destinationBytes.buffer,
+    sourcePdfBytes: sourceBytes.buffer,
+    sourcePageIndex: 0,
+    destinationPageIndex: 1,
+    password: "",
+    sourcePassword: ""
+  }
+}
+```
+
 For image insertion, use `type: "addImage"` with decoded row-major RGBA pixels:
 
 ```js
@@ -557,7 +603,7 @@ Annotation update requests also return a saved PDF. Supported `updateType` value
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

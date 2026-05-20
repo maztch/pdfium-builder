@@ -41,13 +41,13 @@ Status legend:
 
 | Feature | Native API | Worker support | Smoke tested | Docs | Status | Notes |
 |---|---|---:|---:|---|---|---|
-| Set page rotation | `wasm_pdf_set_page_rotation` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Candidate for worker mutation support. |
-| Set page boxes | `wasm_pdf_set_page_box` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Native validates rectangle shape. |
-| Set page size | `wasm_pdf_set_page_size` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Sets media box to `[0, 0, width, height]`. |
-| Insert blank page | `wasm_pdf_insert_blank_page` | No | Yes | [API](API.md#pages) | Partial | Candidate for worker mutation support. |
-| Delete page | `wasm_pdf_delete_page` | No | Yes | [API](API.md#pages) | Partial | Candidate for worker mutation support. |
-| Copy page between documents | `wasm_pdf_copy_page` | No | Yes | [API](API.md#pages) | Partial | Direct API requires two open handles. |
-| Import page ranges | `wasm_pdf_import_pages` | No | Yes | [API](API.md#pages) | Partial | Direct API supports PDFium one-based page ranges. |
+| Set page rotation | `wasm_pdf_set_page_rotation` | `setPageRotation` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#setpagerotation) | Stable | Worker returns saved PDF bytes. |
+| Set page boxes | `wasm_pdf_set_page_box` | `setPageBox` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#setpagebox) | Stable | Native validates rectangle shape. |
+| Set page size | `wasm_pdf_set_page_size` | `setPageSize` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#setpagesize) | Stable | Sets media box to `[0, 0, width, height]`. |
+| Insert blank page | `wasm_pdf_insert_blank_page` | `insertBlankPage` | Yes | [API](API.md#pages), [Worker Protocol](WORKER_PROTOCOL.md#insertblankpage) | Stable | Worker returns saved PDF bytes. |
+| Delete page | `wasm_pdf_delete_page` | `deletePage` | Yes | [API](API.md#pages), [Worker Protocol](WORKER_PROTOCOL.md#deletepage) | Stable | Worker returns saved PDF bytes. |
+| Copy page between documents | `wasm_pdf_copy_page` | `copyPage` | Yes | [API](API.md#pages), [Worker Protocol](WORKER_PROTOCOL.md#copypage) | Stable | Worker opens source and destination handles. |
+| Import page ranges | `wasm_pdf_import_pages` | `importPages` | Yes | [API](API.md#pages), [Worker Protocol](WORKER_PROTOCOL.md#importpages) | Stable | Direct API supports PDFium one-based page ranges. |
 | Add embedded attachment | `wasm_pdf_add_attachment` | `addAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#addattachment) | Stable | Writes document-level embedded file bytes and optional MIME subtype. |
 | Update embedded attachment | `wasm_pdf_set_attachment_file` | `updateAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#updateattachment) | Stable | Replaces bytes and optional MIME subtype while keeping the attachment name. |
 | Delete embedded attachment | `wasm_pdf_delete_attachment` | `deleteAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#deleteattachment) | Stable | Removes the attachment from the embedded files name tree. |
@@ -115,6 +115,13 @@ Status legend:
 | `renderPage` | Full-page rendering | RGBA bytes, width, height | Stable | Accepts render flags. |
 | `renderPageArea` | Area rendering | RGBA bytes, width, height | Stable | Accepts PDF-space rectangle. |
 | `queryDocument` | Page count, metadata, permissions, page geometry, outline and attachment summaries | Document summary payload | Stable | Preferred one-call document summary. |
+| `insertBlankPage` | Insert blank page | Saved PDF bytes | Stable | Uses PDF user-space width and height. |
+| `deletePage` | Delete page | Saved PDF bytes | Stable | Uses zero-based page index. |
+| `copyPage` | Copy one page from source PDF | Saved PDF bytes | Stable | `pdfBytes` is destination; `sourcePdfBytes` is source. |
+| `importPages` | Import source page range | Saved PDF bytes | Stable | Uses PDFium one-based page ranges. |
+| `setPageRotation` | Set page rotation | Saved PDF bytes | Stable | Rotation values are 0..3. |
+| `setPageBox` | Set page box | Saved PDF bytes | Stable | Supports media/crop/bleed/trim/art boxes. |
+| `setPageSize` | Set page media size | Saved PDF bytes | Stable | Sets media box to `[0, 0, width, height]`. |
 | `queryPageObjects` | Page object count/info | Object array | Stable | Read-only. |
 | `searchPageText` | Text search rectangles | Match array | Stable | Parses binary native buffer. |
 | `queryOutline` | Outline/bookmark navigation | Nested outline tree | Stable | Parses binary native buffer. |
@@ -125,7 +132,6 @@ Status legend:
 | `deleteAttachment` | Delete embedded file entry | Saved PDF bytes | Stable | Uses zero-based attachment index. |
 | `deletePageObject` | Delete one page object | Saved PDF bytes | Stable | Regenerates page content. |
 | `transformPageObject` | Affine transform one page object | Saved PDF bytes | Stable | Matrix must be invertible. |
-| `mutatePages` | Insert/delete/copy/import pages | Saved PDF bytes | Planned | Needs protocol design for one vs two input PDFs. |
 
 ## Documentation Gap Coverage
 
