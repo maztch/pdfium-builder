@@ -40,7 +40,7 @@ Replacing file bytes uses PDFium's attachment file setter, which updates the emb
 
 Form field read/write uses PDFium interactive form internals because the public annotation API exposes useful field reads but not a simple general-purpose value setter.
 
-The wrapper enumerates AcroForm fields, serializes field metadata and UTF-8 values into a compact binary buffer, and updates values by fully qualified field name. After a write it sets AcroForm `/NeedAppearances true` so viewers can regenerate widget appearances.
+The wrapper enumerates AcroForm fields, serializes field metadata, UTF-8 values, widget geometry, and checkbox/radio state into a compact binary buffer, and updates values by fully qualified field name. Checkbox and radio writes use the field's zero-based control index. After a write it sets AcroForm `/NeedAppearances true` so viewers can regenerate widget appearances.
 
 Scope is intentionally basic: no PDF JavaScript execution, field calculation, field validation, or XFA support.
 

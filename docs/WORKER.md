@@ -626,7 +626,7 @@ worker.postMessage(
 
 Annotation update requests also return a saved PDF. Supported `updateType` values are `rect`, `color`, `text`, and `uri`.
 
-Use `queryFormFields` and `setFormFieldValue` for basic AcroForm values:
+Use `queryFormFields`, `setFormFieldValue`, and `setFormFieldChecked` for basic AcroForm values and checkbox/radio state:
 
 ```js
 {
@@ -652,11 +652,27 @@ Use `queryFormFields` and `setFormFieldValue` for basic AcroForm values:
 }
 ```
 
-The form API reads AcroForm field metadata and updates field values. It does not run PDF JavaScript, calculation, validation, or XFA flows.
+```js
+{
+  id: "request-check-form-field",
+  type: "setFormFieldChecked",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    name: "agree",
+    controlIndex: 0,
+    checked: true,
+    password: ""
+  }
+}
+```
+
+For radio groups, `controlIndex` selects the radio widget. `queryFormFields` returns each field's `widgets` array with page index, rectangle, checked state, default checked state, export value, and on-state name.
+
+The form API reads AcroForm field metadata, widget geometry, and checked state, then updates field values or checkbox/radio state. It does not run PDF JavaScript, calculation, validation, or XFA flows.
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `queryFormFields`, `setFormFieldValue`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `insertBlankPage`, `deletePage`, `copyPage`, `importPages`, `setPageRotation`, `setPageBox`, `setPageSize`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `queryFormFields`, `setFormFieldValue`, `setFormFieldChecked`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

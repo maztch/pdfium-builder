@@ -238,6 +238,12 @@ function parseFormFields(bytes) {
     return value;
   }
 
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
   function readString() {
     const length = readUint32();
     const value = textDecoder.decode(bytes.subarray(offset, offset + length));
@@ -247,7 +253,7 @@ function parseFormFields(bytes) {
 
   const fieldCount = readUint32();
   for (let index = 0; index < fieldCount; index += 1) {
-    fields.push({
+    const field = {
       index,
       type: readInt32(),
       flags: readUint32(),
@@ -256,7 +262,28 @@ function parseFormFields(bytes) {
       alternateName: readString() || null,
       value: readString(),
       defaultValue: readString(),
-    });
+      widgets: [],
+    };
+
+    const widgetCount = readUint32();
+    for (let widgetIndex = 0; widgetIndex < widgetCount; widgetIndex += 1) {
+      field.widgets.push({
+        index: readInt32(),
+        pageIndex: readInt32(),
+        rect: {
+          left: readDouble(),
+          bottom: readDouble(),
+          right: readDouble(),
+          top: readDouble(),
+        },
+        checked: readInt32() !== 0,
+        defaultChecked: readInt32() !== 0,
+        exportValue: readString(),
+        onStateName: readString(),
+      });
+    }
+
+    fields.push(field);
   }
 
   return fields;
@@ -528,6 +555,17 @@ export class PdfDocument {
       ["number", "string", "string"],
       [this.handle, name, value],
       "Unable to set form field value"
+    );
+    return this;
+  }
+
+  setFormFieldChecked(name, checked, controlIndex = 0) {
+    this.call(
+      "wasm_pdf_set_form_field_checked",
+      "number",
+      ["number", "string", "number", "number"],
+      [this.handle, name, controlIndex, checked ? 1 : 0],
+      "Unable to set form field checked state"
     );
     return this;
   }

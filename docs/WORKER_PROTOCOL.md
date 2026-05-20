@@ -376,7 +376,18 @@ Returns `{ fields }`, where each field has:
   name,
   alternateName,
   value,
-  defaultValue
+  defaultValue,
+  widgets: [
+    {
+      index,
+      pageIndex,
+      rect: { left, bottom, right, top },
+      checked,
+      defaultChecked,
+      exportValue,
+      onStateName
+    }
+  ]
 }
 ```
 
@@ -394,6 +405,20 @@ Form field type values are listed in [API Reference](API.md#forms).
 Returns `{ pdfBytes }`.
 
 This updates AcroForm field values and sets `/NeedAppearances`. It does not run PDF JavaScript, calculation, validation, or XFA flows.
+
+## `setFormFieldChecked`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `name` | string | Yes | `""` | Fully qualified checkbox or radio field name. |
+| `controlIndex` | number | No | `0` | Zero-based widget/control index within the field. Radio groups use this to choose an option. |
+| `checked` | boolean | Yes | `false` | Checked/selected state. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+This updates checkbox and radio widgets and sets `/NeedAppearances`.
 
 ## `readAttachment`
 

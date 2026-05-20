@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -21,6 +22,7 @@
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_filespec.h"
+#include "core/fpdfdoc/cpdf_formcontrol.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_generateap.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
@@ -470,6 +472,11 @@ std::vector<uint8_t> WideStringToUtf8Bytes(const WideString& value) {
   return std::vector<uint8_t>(data, data + utf8.GetLength());
 }
 
+std::vector<uint8_t> ByteStringToBytes(const ByteString& value) {
+  const auto* data = reinterpret_cast<const uint8_t*>(value.c_str());
+  return std::vector<uint8_t>(data, data + value.GetLength());
+}
+
 bool DecodeUtf8CStringToWideString(const char* value, WideString* output) {
   if (!value || !output) return false;
 
@@ -508,6 +515,36 @@ int FormFieldTypeToPublic(CPDF_FormField::Type type) {
     default:
       return FPDF_FORMFIELD_UNKNOWN;
   }
+}
+
+int PageIndexForFormControl(CPDF_Document* doc, const CPDF_FormControl* control) {
+  if (!doc || !control) return -1;
+
+  RetainPtr<const CPDF_Dictionary> widget = control->GetWidgetDict();
+  if (!widget) return -1;
+
+  RetainPtr<const CPDF_Dictionary> page_dict = widget->GetDictFor("P");
+  if (page_dict) {
+    const int page_index = doc->GetPageIndex(page_dict->GetObjNum());
+    if (page_index >= 0) return page_index;
+  }
+
+  for (int page_index = 0, page_count = doc->GetPageCount();
+       page_index < page_count;
+       ++page_index) {
+    RetainPtr<const CPDF_Dictionary> candidate_page = doc->GetPageDictionary(page_index);
+    if (!candidate_page) continue;
+
+    RetainPtr<const CPDF_Array> annots = candidate_page->GetArrayFor("Annots");
+    if (!annots) continue;
+
+    for (size_t annot_index = 0; annot_index < annots->size(); ++annot_index) {
+      RetainPtr<const CPDF_Object> annot = annots->GetDirectObjectAt(annot_index);
+      if (annot.Get() == widget.Get()) return page_index;
+    }
+  }
+
+  return -1;
 }
 
 void MarkNeedsAppearances(CPDF_Document* doc) {
@@ -1790,10 +1827,11 @@ int wasm_pdf_get_form_fields(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_
     const std::vector<uint8_t> value = WideStringToUtf8Bytes(field->GetValue());
     const std::vector<uint8_t> default_value =
         WideStringToUtf8Bytes(field->GetDefaultValue());
+    const int control_count = field->CountControls();
 
     AppendInt32(&result, FormFieldTypeToPublic(field->GetType()));
     AppendUint32(&result, field->GetFieldFlags());
-    AppendInt32(&result, field->CountControls());
+    AppendInt32(&result, control_count);
     AppendBytes(&result, name.data(), static_cast<uint32_t>(name.size()));
     AppendBytes(
         &result,
@@ -1804,6 +1842,38 @@ int wasm_pdf_get_form_fields(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_
         &result,
         default_value.data(),
         static_cast<uint32_t>(default_value.size()));
+    AppendUint32(&result, static_cast<uint32_t>(control_count));
+
+    for (int control_index = 0; control_index < control_count; ++control_index) {
+      CPDF_FormControl* control = field->GetControl(control_index);
+      if (!control) {
+        SetLastError(WASM_PDF_ERROR_FORM_READ_FAILED);
+        return 0;
+      }
+
+      const CFX_FloatRect rect = control->GetRect();
+      const std::vector<uint8_t> export_value =
+          WideStringToUtf8Bytes(control->GetExportValue());
+      const std::vector<uint8_t> on_state_name =
+          ByteStringToBytes(control->GetOnStateName());
+
+      AppendInt32(&result, control_index);
+      AppendInt32(&result, PageIndexForFormControl(doc, control));
+      AppendDouble(&result, rect.left);
+      AppendDouble(&result, rect.bottom);
+      AppendDouble(&result, rect.right);
+      AppendDouble(&result, rect.top);
+      AppendInt32(&result, control->IsChecked() ? 1 : 0);
+      AppendInt32(&result, control->IsDefaultChecked() ? 1 : 0);
+      AppendBytes(
+          &result,
+          export_value.data(),
+          static_cast<uint32_t>(export_value.size()));
+      AppendBytes(
+          &result,
+          on_state_name.data(),
+          static_cast<uint32_t>(on_state_name.size()));
+    }
   }
 
   if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
@@ -1858,6 +1928,59 @@ int wasm_pdf_set_form_field_value(uintptr_t handle,
     return 0;
   }
 
+  MarkNeedsAppearances(doc);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_form_field_checked(uintptr_t handle,
+                                    const char* field_name_utf8,
+                                    int control_index,
+                                    int checked) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!field_name_utf8 || !field_name_utf8[0] || control_index < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT fpdf_doc = GetDocument(handle);
+  if (!fpdf_doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(fpdf_doc);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  WideString field_name;
+  if (!DecodeUtf8CStringToWideString(field_name_utf8, &field_name)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  CPDF_InteractiveForm form(doc);
+  CPDF_FormField* field = form.GetField(0, field_name);
+  if (!field || control_index >= field->CountControls()) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  const CPDF_FormField::Type type = field->GetType();
+  if (type != CPDF_FormField::kCheckBox && type != CPDF_FormField::kRadioButton) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  field->CheckControl(
+      control_index,
+      checked != 0,
+      NotificationOption::kDoNotNotify);
   MarkNeedsAppearances(doc);
   ClearLastError();
   return 1;

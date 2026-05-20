@@ -290,6 +290,12 @@ function parseAttachmentInfo(bytes, index) {
     return value;
   }
 
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
   function readString() {
     const length = readUint32();
     const value = decoder.decode(bytes.subarray(offset, offset + length));
@@ -397,6 +403,12 @@ function parseFormFields(bytes) {
     return value;
   }
 
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
   function readString() {
     const length = readUint32();
     const value = decoder.decode(bytes.subarray(offset, offset + length));
@@ -406,7 +418,7 @@ function parseFormFields(bytes) {
 
   const fieldCount = readUint32();
   for (let index = 0; index < fieldCount; index += 1) {
-    fields.push({
+    const field = {
       index,
       type: readInt32(),
       flags: readUint32(),
@@ -415,7 +427,28 @@ function parseFormFields(bytes) {
       alternateName: readString() || null,
       value: readString(),
       defaultValue: readString(),
-    });
+      widgets: [],
+    };
+
+    const widgetCount = readUint32();
+    for (let widgetIndex = 0; widgetIndex < widgetCount; widgetIndex += 1) {
+      field.widgets.push({
+        index: readInt32(),
+        pageIndex: readInt32(),
+        rect: {
+          left: readDouble(),
+          bottom: readDouble(),
+          right: readDouble(),
+          top: readDouble(),
+        },
+        checked: readInt32() !== 0,
+        defaultChecked: readInt32() !== 0,
+        exportValue: readString(),
+        onStateName: readString(),
+      });
+    }
+
+    fields.push(field);
   }
 
   return fields;
@@ -1824,6 +1857,46 @@ async function setFormFieldValue(payload = {}) {
   }
 }
 
+async function setFormFieldChecked(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const updated = mod.ccall(
+      "wasm_pdf_set_form_field_checked",
+      "number",
+      ["number", "string", "number", "number"],
+      [
+        handle,
+        stringOrDefault(payload.name, ""),
+        numberOrDefault(payload.controlIndex, 0),
+        payload.checked ? 1 : 0,
+      ]
+    );
+    if (!updated) throwPdfiumError(mod, "Unable to set form field checked state");
+
+    return saveDocumentBytes(mod, handle);
+  } finally {
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+  }
+}
+
 async function readAttachment(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -2286,6 +2359,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "setFormFieldValue") {
     return setFormFieldValue(message.payload);
+  }
+  if (message.type === "setFormFieldChecked") {
+    return setFormFieldChecked(message.payload);
   }
   if (message.type === "readAttachment") {
     return readAttachment(message.payload);

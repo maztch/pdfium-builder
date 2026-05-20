@@ -122,6 +122,7 @@ This API covers document-level embedded files, not file-attachment annotations.
 
 - `wasm_pdf_get_form_fields(handle, outPtrPtr, outSizePtr)` writes a binary AcroForm field summary buffer. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_set_form_field_value(handle, fieldName, value)` updates one AcroForm field value by fully qualified field name. `fieldName` and `value` must be valid UTF-8.
+- `wasm_pdf_set_form_field_checked(handle, fieldName, controlIndex, checked)` updates one checkbox or radio widget by fully qualified field name and zero-based widget/control index. `checked` is `0` or `1`.
 
 Form field result buffer layout:
 
@@ -134,6 +135,15 @@ Form field result buffer layout:
 - `uint32 alternateNameSize`, followed by UTF-8 alternate/display name bytes
 - `uint32 valueSize`, followed by UTF-8 current value bytes
 - `uint32 defaultValueSize`, followed by UTF-8 default value bytes
+- `uint32 widgetCount`
+- Per widget:
+- `int32 index`: zero-based control index within the field
+- `int32 pageIndex`: zero-based page index, or `-1` if the widget page cannot be resolved
+- `double left`, `double bottom`, `double right`, `double top`: widget rectangle in PDF user-space
+- `int32 checked`: `1` when checked/selected, otherwise `0`
+- `int32 defaultChecked`: `1` when checked by default, otherwise `0`
+- `uint32 exportValueSize`, followed by UTF-8 export value bytes
+- `uint32 onStateNameSize`, followed by ASCII/UTF-8 appearance on-state name bytes
 
 Known form field types:
 
@@ -146,7 +156,7 @@ Known form field types:
 - `6`: text field
 - `7`: signature
 
-This is a basic AcroForm value API. It reads field metadata and writes values, sets `/NeedAppearances`, and does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
+This is a basic AcroForm API. It reads field metadata, widget geometry, checkbox/radio state, writes values, writes checkbox/radio state, sets `/NeedAppearances`, and does not execute PDF JavaScript, calculate fields, validate fields, or support XFA forms.
 
 ## Text extraction and search
 

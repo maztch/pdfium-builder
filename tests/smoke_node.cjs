@@ -41,11 +41,18 @@ function createMinimalPdf() {
 
 function createAcroFormPdf() {
   const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R] /DA (/Helv 0 Tf 0 g) >> >>\nendobj\n',
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 6 0 R 7 0 R] /DA (/Helv 0 Tf 0 g) >> >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R /Annots [5 0 R] >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R /Annots [5 0 R 6 0 R 8 0 R 9 0 R] >>\nendobj\n',
     '4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n',
-    '5 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (customer.name) /TU (Customer Name) /V (Initial Value) /DV (Default Value) /Rect [72 700 280 730] /F 4 /DA (/Helv 12 Tf 0 g) >>\nendobj\n',
+    '5 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Tx /T (customer.name) /TU (Customer Name) /V (Initial Value) /DV (Default Value) /Rect [72 700 280 730] /F 4 /P 3 0 R /DA (/Helv 12 Tf 0 g) >>\nendobj\n',
+    '6 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /TU (Agree) /V /Off /DV /Off /Rect [72 650 92 670] /F 4 /P 3 0 R /AS /Off /AP << /N << /Off 10 0 R /Yes 11 0 R >> >> >>\nendobj\n',
+    '7 0 obj\n<< /FT /Btn /T (choice) /TU (Choice) /Ff 32768 /V /Off /Kids [8 0 R 9 0 R] >>\nendobj\n',
+    '8 0 obj\n<< /Type /Annot /Subtype /Widget /Parent 7 0 R /Rect [72 610 92 630] /F 4 /P 3 0 R /AS /Off /AP << /N << /Off 10 0 R /A 11 0 R >> >> >>\nendobj\n',
+    '9 0 obj\n<< /Type /Annot /Subtype /Widget /Parent 7 0 R /Rect [112 610 132 630] /F 4 /P 3 0 R /AS /Off /AP << /N << /Off 10 0 R /B 12 0 R >> >> >>\nendobj\n',
+    '10 0 obj\n<< /Length 0 /BBox [0 0 20 20] >>\nstream\n\nendstream\nendobj\n',
+    '11 0 obj\n<< /Length 0 /BBox [0 0 20 20] >>\nstream\n\nendstream\nendobj\n',
+    '12 0 obj\n<< /Length 0 /BBox [0 0 20 20] >>\nstream\n\nendstream\nendobj\n',
   ];
 
   let pdf = '%PDF-1.4\n';
@@ -189,6 +196,12 @@ function parseAttachmentInfo(bytes, index) {
     return value;
   }
 
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
   function readString() {
     const size = readUint32();
     const value = decoder.decode(bytes.subarray(offset, offset + size));
@@ -291,6 +304,12 @@ function parseFormFields(bytes) {
     return value;
   }
 
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
   function readString() {
     const size = readUint32();
     const value = decoder.decode(bytes.subarray(offset, offset + size));
@@ -300,7 +319,7 @@ function parseFormFields(bytes) {
 
   const fieldCount = readUint32();
   for (let index = 0; index < fieldCount; index += 1) {
-    fields.push({
+    const field = {
       index,
       type: readInt32(),
       flags: readUint32(),
@@ -309,7 +328,28 @@ function parseFormFields(bytes) {
       alternateName: readString() || null,
       value: readString(),
       defaultValue: readString(),
-    });
+      widgets: [],
+    };
+
+    const widgetCount = readUint32();
+    for (let widgetIndex = 0; widgetIndex < widgetCount; widgetIndex += 1) {
+      field.widgets.push({
+        index: readInt32(),
+        pageIndex: readInt32(),
+        rect: {
+          left: readDouble(),
+          bottom: readDouble(),
+          right: readDouble(),
+          top: readDouble(),
+        },
+        checked: readInt32() !== 0,
+        defaultChecked: readInt32() !== 0,
+        exportValue: readString(),
+        onStateName: readString(),
+      });
+    }
+
+    fields.push(field);
   }
 
   return fields;
@@ -373,19 +413,35 @@ async function main() {
 
     const directFormOutput = await directApi.withDocument(createAcroFormPdf(), (doc) => {
       const fields = doc.formFields();
-      assert.equal(fields.length, 1, 'direct API form field count should match');
-      assert.equal(fields[0].name, 'customer.name', 'direct API form field name should be readable');
-      assert.equal(fields[0].alternateName, 'Customer Name', 'direct API form alternate name should be readable');
-      assert.equal(fields[0].value, 'Initial Value', 'direct API form value should be readable');
-      assert.equal(fields[0].defaultValue, 'Default Value', 'direct API form default value should be readable');
+      const textField = fields.find((field) => field.name === 'customer.name');
+      const checkbox = fields.find((field) => field.name === 'agree');
+      const radio = fields.find((field) => field.name === 'choice');
+      assert.equal(fields.length, 3, 'direct API form field count should match');
+      assert.equal(textField.alternateName, 'Customer Name', 'direct API form alternate name should be readable');
+      assert.equal(textField.value, 'Initial Value', 'direct API form value should be readable');
+      assert.equal(textField.defaultValue, 'Default Value', 'direct API form default value should be readable');
+      assert.deepEqual(textField.widgets[0].rect, { left: 72, bottom: 700, right: 280, top: 730 }, 'direct API form widget rect should be readable');
+      assert.equal(textField.widgets[0].pageIndex, 0, 'direct API form widget page index should be readable');
+      assert.equal(checkbox.type, 2, 'direct API checkbox type should be readable');
+      assert.equal(checkbox.widgets[0].checked, false, 'direct API checkbox initial state should be readable');
+      assert.equal(radio.type, 3, 'direct API radio type should be readable');
+      assert.equal(radio.widgets.length, 2, 'direct API radio widgets should be readable');
       doc.setFormFieldValue('customer.name', 'Updated café 中文');
-      assert.equal(doc.formFields()[0].value, 'Updated café 中文', 'direct API form value should update');
+      doc.setFormFieldChecked('agree', true);
+      doc.setFormFieldChecked('choice', true, 1);
+      const updatedFields = doc.formFields();
+      assert.equal(updatedFields.find((field) => field.name === 'customer.name').value, 'Updated café 中文', 'direct API form value should update');
+      assert.equal(updatedFields.find((field) => field.name === 'agree').widgets[0].checked, true, 'direct API checkbox should update');
+      assert.equal(updatedFields.find((field) => field.name === 'choice').widgets[1].checked, true, 'direct API radio should update');
       return doc.save();
     });
     assert.equal(Buffer.from(directFormOutput.subarray(0, 5)).toString('ascii'), '%PDF-', 'direct API form save should return PDF bytes');
 
     await directApi.withDocument(directFormOutput, (doc) => {
-      assert.equal(doc.formFields()[0].value, 'Updated café 中文', 'direct API form value should persist after reopen');
+      const fields = doc.formFields();
+      assert.equal(fields.find((field) => field.name === 'customer.name').value, 'Updated café 中文', 'direct API form value should persist after reopen');
+      assert.equal(fields.find((field) => field.name === 'agree').widgets[0].checked, true, 'direct API checkbox should persist after reopen');
+      assert.equal(fields.find((field) => field.name === 'choice').widgets[1].checked, true, 'direct API radio should persist after reopen');
     });
   } finally {
     directApi.destroy();
@@ -510,11 +566,19 @@ async function main() {
     formFieldsPtr = mod.getValue(metadataPtrPtr, 'i32');
     const formFieldsSize = mod.getValue(metadataSizePtr, 'i32');
     const formFields = parseFormFields(mod.HEAPU8.slice(formFieldsPtr, formFieldsPtr + formFieldsSize));
-    assert.equal(formFields.length, 1, 'form field count should match');
-    assert.equal(formFields[0].type, 6, 'form text field type should be readable');
-    assert.equal(formFields[0].name, 'customer.name', 'form field name should be readable');
-    assert.equal(formFields[0].alternateName, 'Customer Name', 'form alternate name should be readable');
-    assert.equal(formFields[0].value, 'Initial Value', 'form field value should be readable');
+    const nativeTextField = formFields.find((field) => field.name === 'customer.name');
+    const nativeCheckbox = formFields.find((field) => field.name === 'agree');
+    const nativeRadio = formFields.find((field) => field.name === 'choice');
+    assert.equal(formFields.length, 3, 'form field count should match');
+    assert.equal(nativeTextField.type, 6, 'form text field type should be readable');
+    assert.equal(nativeTextField.alternateName, 'Customer Name', 'form alternate name should be readable');
+    assert.equal(nativeTextField.value, 'Initial Value', 'form field value should be readable');
+    assert.deepEqual(nativeTextField.widgets[0].rect, { left: 72, bottom: 700, right: 280, top: 730 }, 'form widget rect should be readable');
+    assert.equal(nativeTextField.widgets[0].pageIndex, 0, 'form widget page index should be readable');
+    assert.equal(nativeCheckbox.type, 2, 'checkbox type should be readable');
+    assert.equal(nativeCheckbox.widgets[0].checked, false, 'checkbox state should be readable');
+    assert.equal(nativeRadio.type, 3, 'radio type should be readable');
+    assert.equal(nativeRadio.widgets.length, 2, 'radio widgets should be readable');
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [formFieldsPtr]);
     formFieldsPtr = 0;
 
@@ -525,6 +589,18 @@ async function main() {
       [formHandle, 'customer.name', 'Native updated café 中文']
     ), 1, 'form field value should be writable');
     assert.equal(mod.ccall(
+      'wasm_pdf_set_form_field_checked',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [formHandle, 'agree', 0, 1]
+    ), 1, 'checkbox state should be writable');
+    assert.equal(mod.ccall(
+      'wasm_pdf_set_form_field_checked',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [formHandle, 'choice', 1, 1]
+    ), 1, 'radio state should be writable');
+    assert.equal(mod.ccall(
       'wasm_pdf_get_form_fields',
       'number',
       ['number', 'number', 'number'],
@@ -533,7 +609,9 @@ async function main() {
     formFieldsPtr = mod.getValue(metadataPtrPtr, 'i32');
     const updatedFormFieldsSize = mod.getValue(metadataSizePtr, 'i32');
     const updatedFormFields = parseFormFields(mod.HEAPU8.slice(formFieldsPtr, formFieldsPtr + updatedFormFieldsSize));
-    assert.equal(updatedFormFields[0].value, 'Native updated café 中文', 'updated native form value should be readable');
+    assert.equal(updatedFormFields.find((field) => field.name === 'customer.name').value, 'Native updated café 中文', 'updated native form value should be readable');
+    assert.equal(updatedFormFields.find((field) => field.name === 'agree').widgets[0].checked, true, 'updated native checkbox state should be readable');
+    assert.equal(updatedFormFields.find((field) => field.name === 'choice').widgets[1].checked, true, 'updated native radio state should be readable');
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [formFieldsPtr]);
     formFieldsPtr = 0;
 
@@ -544,6 +622,13 @@ async function main() {
       [formHandle, 'missing.field', 'value']
     ), 0, 'missing form field update should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'missing form field should report invalid argument');
+    assert.equal(mod.ccall(
+      'wasm_pdf_set_form_field_checked',
+      'number',
+      ['number', 'string', 'number', 'number'],
+      [formHandle, 'customer.name', 0, 1]
+    ), 0, 'checked update on text field should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'checked update on text field should report invalid argument');
 
     const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
     assert.equal(pageCount, 1, 'page count should report one page');
@@ -1615,9 +1700,10 @@ async function main() {
       },
       [workerFormBytes.buffer]
     );
-    assert.equal(workerFormResult.fields.length, 1, 'worker queryFormFields should return one field');
-    assert.equal(workerFormResult.fields[0].name, 'customer.name', 'worker form field name should be readable');
-    assert.equal(workerFormResult.fields[0].value, 'Initial Value', 'worker form field value should be readable');
+    assert.equal(workerFormResult.fields.length, 3, 'worker queryFormFields should return form fields');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').value, 'Initial Value', 'worker form field value should be readable');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').widgets[0].pageIndex, 0, 'worker form widget page index should be readable');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'agree').widgets[0].checked, false, 'worker checkbox state should be readable');
 
     workerFormBytes = createAcroFormPdf();
     workerFormResult = await requestPdfWorker(
@@ -1631,6 +1717,29 @@ async function main() {
       [workerFormBytes.buffer]
     );
     workerFormBytes = new Uint8Array(workerFormResult.pdfBytes);
+    workerFormResult = await requestPdfWorker(
+      worker,
+      'setFormFieldChecked',
+      {
+        pdfBytes: workerFormBytes.buffer,
+        name: 'agree',
+        checked: true,
+      },
+      [workerFormBytes.buffer]
+    );
+    workerFormBytes = new Uint8Array(workerFormResult.pdfBytes);
+    workerFormResult = await requestPdfWorker(
+      worker,
+      'setFormFieldChecked',
+      {
+        pdfBytes: workerFormBytes.buffer,
+        name: 'choice',
+        controlIndex: 1,
+        checked: true,
+      },
+      [workerFormBytes.buffer]
+    );
+    workerFormBytes = new Uint8Array(workerFormResult.pdfBytes);
     const workerFormQueryBytes = workerFormBytes.slice();
     workerFormResult = await requestPdfWorker(
       worker,
@@ -1640,7 +1749,9 @@ async function main() {
       },
       [workerFormQueryBytes.buffer]
     );
-    assert.equal(workerFormResult.fields[0].value, 'Worker updated café 中文', 'worker setFormFieldValue should persist');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'customer.name').value, 'Worker updated café 中文', 'worker setFormFieldValue should persist');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'agree').widgets[0].checked, true, 'worker setFormFieldChecked should persist checkbox');
+    assert.equal(workerFormResult.fields.find((field) => field.name === 'choice').widgets[1].checked, true, 'worker setFormFieldChecked should persist radio');
 
     let workerBytes = createMinimalPdf();
     let workerResult = await requestPdfWorker(
