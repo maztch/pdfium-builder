@@ -8,10 +8,14 @@ const distDir = path.join(__dirname, '..', 'dist');
 
 function createMinimalPdf() {
   const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Outlines 5 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R >>\nendobj\n',
     '4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n',
+    '5 0 obj\n<< /Type /Outlines /First 6 0 R /Last 7 0 R /Count 3 >>\nendobj\n',
+    '6 0 obj\n<< /Title (Chapter 1) /Parent 5 0 R /Next 7 0 R /First 8 0 R /Last 8 0 R /Count 1 /Dest [3 0 R /XYZ 0 792 0] >>\nendobj\n',
+    '7 0 obj\n<< /Title (External link) /Parent 5 0 R /Prev 6 0 R /A << /S /URI /URI (https://example.com) >> >>\nendobj\n',
+    '8 0 obj\n<< /Title (Section 1.1) /Parent 6 0 R /Dest [3 0 R /Fit] >>\nendobj\n',
   ];
 
   let pdf = '%PDF-1.4\n';
@@ -32,6 +36,60 @@ function createMinimalPdf() {
   pdf += `startxref\n${xrefOffset}\n%%EOF\n`;
 
   return new Uint8Array(Buffer.from(pdf, 'ascii'));
+}
+
+function parseOutlineItems(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder('utf-8');
+  const items = [];
+  let offset = 0;
+  const itemCount = view.getUint32(offset, true);
+  offset += 4;
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
+  function readString() {
+    const size = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + size));
+    offset += size;
+    return value;
+  }
+
+  for (let i = 0; i < itemCount; i += 1) {
+    const depth = readInt32();
+    const childCount = readInt32();
+    const title = readString();
+    const actionType = readUint32();
+    const pageIndex = readInt32();
+    const viewMode = readUint32();
+    const viewParamCount = readUint32();
+    const viewParams = [readDouble(), readDouble(), readDouble(), readDouble()].slice(0, viewParamCount);
+    const locationFlags = readUint32();
+    const x = readDouble();
+    const y = readDouble();
+    const zoom = readDouble();
+    const uri = readString();
+    const filePath = readString();
+    items.push({ depth, childCount, title, actionType, pageIndex, viewMode, viewParamCount, viewParams, locationFlags, x, y, zoom, uri, filePath });
+  }
+
+  return items;
 }
 
 async function main() {
@@ -58,6 +116,9 @@ async function main() {
   let metadataSizePtr = 0;
   let metadataPtr = 0;
   let textPtr = 0;
+  let outlinePtr = 0;
+  let outlinePtrPtr = 0;
+  let outlineSizePtr = 0;
   let searchPtr = 0;
   let searchPtrPtr = 0;
   let searchSizePtr = 0;
@@ -101,8 +162,12 @@ async function main() {
 
     metadataPtrPtr = mod._malloc(4);
     metadataSizePtr = mod._malloc(4);
+    outlinePtrPtr = mod._malloc(4);
+    outlineSizePtr = mod._malloc(4);
     assert.notEqual(metadataPtrPtr, 0, 'metadata out pointer malloc failed');
     assert.notEqual(metadataSizePtr, 0, 'metadata out size malloc failed');
+    assert.notEqual(outlinePtrPtr, 0, 'outline out pointer malloc failed');
+    assert.notEqual(outlineSizePtr, 0, 'outline out size malloc failed');
 
     const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
     assert.equal(pageCount, 1, 'page count should report one page');
@@ -257,6 +322,42 @@ async function main() {
     );
     assert.equal(invalidMetadataKey, 0, 'invalid metadata key should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid metadata key should report invalid argument');
+
+    const gotOutline = mod.ccall(
+      'wasm_pdf_get_outline',
+      'number',
+      ['number', 'number', 'number'],
+      [handle, outlinePtrPtr, outlineSizePtr]
+    );
+    assert.equal(gotOutline, 1, 'outline should be readable');
+    outlinePtr = mod.getValue(outlinePtrPtr, 'i32');
+    const outlineSize = mod.getValue(outlineSizePtr, 'i32');
+    assert.notEqual(outlinePtr, 0, 'outline output pointer should not be null');
+    const outlineItems = parseOutlineItems(mod.HEAPU8.slice(outlinePtr, outlinePtr + outlineSize));
+    assert.equal(outlineItems.length, 3, 'fixture should expose three outline items');
+    assert.deepEqual(outlineItems.map((item) => [item.depth, item.title]), [
+      [0, 'Chapter 1'],
+      [1, 'Section 1.1'],
+      [0, 'External link'],
+    ], 'outline should preserve depth-first navigation order');
+    assert.equal(outlineItems[0].pageIndex, 0, 'first outline item should target page 0');
+    assert.equal(outlineItems[0].viewMode, 1, 'first outline item should preserve XYZ view mode');
+    assert.equal(outlineItems[0].locationFlags, 3, 'first outline item should expose x/y flags');
+    assert.equal(outlineItems[0].x, 0, 'first outline x should match');
+    assert.equal(outlineItems[0].y, 792, 'first outline y should match');
+    assert.equal(outlineItems[2].actionType, 3, 'external outline item should expose URI action');
+    assert.equal(outlineItems[2].uri, 'https://example.com', 'external outline URI should match');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outlinePtr]);
+    outlinePtr = 0;
+
+    const invalidOutline = mod.ccall(
+      'wasm_pdf_get_outline',
+      'number',
+      ['number', 'number', 'number'],
+      [handle, 0, outlineSizePtr]
+    );
+    assert.equal(invalidOutline, 0, 'invalid outline output pointer should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid outline output pointer should report invalid argument');
 
     const inserted = mod.ccall(
       'wasm_pdf_insert_blank_page',
@@ -837,6 +938,20 @@ async function main() {
     );
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     metadataPtr = 0;
+
+    assert.equal(mod.ccall(
+      'wasm_pdf_get_outline',
+      'number',
+      ['number', 'number', 'number'],
+      [reopened, outlinePtrPtr, outlineSizePtr]
+    ), 1, 'saved PDF outline should be readable');
+    outlinePtr = mod.getValue(outlinePtrPtr, 'i32');
+    const savedOutlineSize = mod.getValue(outlineSizePtr, 'i32');
+    const savedOutlineItems = parseOutlineItems(mod.HEAPU8.slice(outlinePtr, outlinePtr + savedOutlineSize));
+    assert.equal(savedOutlineItems.length, 3, 'saved PDF outline should persist');
+    assert.equal(savedOutlineItems[1].title, 'Section 1.1', 'saved nested outline title should persist');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outlinePtr]);
+    outlinePtr = 0;
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
@@ -844,6 +959,7 @@ async function main() {
     if (searchPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [searchPtr]);
     if (renderPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     if (textPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);
+    if (outlinePtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outlinePtr]);
     if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);
@@ -861,6 +977,8 @@ async function main() {
     if (topPtr) mod._free(topPtr);
     if (metadataPtrPtr) mod._free(metadataPtrPtr);
     if (metadataSizePtr) mod._free(metadataSizePtr);
+    if (outlinePtrPtr) mod._free(outlinePtrPtr);
+    if (outlineSizePtr) mod._free(outlineSizePtr);
     if (searchPtrPtr) mod._free(searchPtrPtr);
     if (searchSizePtr) mod._free(searchSizePtr);
     if (renderPtrPtr) mod._free(renderPtrPtr);

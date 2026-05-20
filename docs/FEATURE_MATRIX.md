@@ -29,6 +29,7 @@ Status legend:
 | Page box query | `wasm_pdf_get_page_box` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Supports media/crop/bleed/trim/art boxes. |
 | Permissions query | `wasm_pdf_get_permissions` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Native read path is stable. |
 | Metadata read | `wasm_pdf_get_metadata` | No | Yes | [API](API.md#metadata) | Partial | Candidate for worker query support. |
+| Outline/bookmarks read | `wasm_pdf_get_outline` | `queryOutline` | Yes | [API](API.md#outline-and-bookmarks), [Worker Protocol](WORKER_PROTOCOL.md#queryoutline) | Stable | Returns a depth-first navigation tree with page destinations and URI/file actions. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Annotation count | `wasm_pdf_annotation_count` | No | Yes | [API](API.md#annotations) | Partial | Worker can add/update but not list annotations. |
@@ -89,6 +90,7 @@ Status legend:
 | Strict UTF-8 input handling | Shared decoder | Indirect | Yes | [Usage](USAGE.md#error-handling), [Internals](INTERNALS.md#utf-8-and-strings) | Stable | Malformed text fails with error code `15`. |
 | UTF-8 output buffers | Metadata/text APIs | No direct worker extraction | Yes | [API](API.md#metadata), [API](API.md#text-extraction-and-search) | Stable | Caller frees output with `wasm_pdf_free_buffer`. |
 | Binary search result buffer | `wasm_pdf_search_page_text` | Parsed by worker | Yes | [API](API.md#text-extraction-and-search) | Stable | Worker returns parsed match objects. |
+| Binary outline result buffer | `wasm_pdf_get_outline` | Parsed by worker | Yes | [API](API.md#outline-and-bookmarks) | Stable | Worker returns nested bookmark objects. |
 | RGBA render buffers | Render APIs | `renderPage`, `renderPageArea` | Yes | [API](API.md#rendering) | Stable | Wrapper normalizes output to RGBA. |
 | RGBA image input | `wasm_pdf_add_rgba_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is row-major RGBA. |
 | JPEG image input | `wasm_pdf_add_jpeg_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is encoded JPEG bytes. |
@@ -106,14 +108,19 @@ Status legend:
 | `renderPageArea` | Area rendering | RGBA bytes, width, height | Stable | Accepts PDF-space rectangle. |
 | `queryPageObjects` | Page object count/info | Object array | Stable | Read-only. |
 | `searchPageText` | Text search rectangles | Match array | Stable | Parses binary native buffer. |
+| `queryOutline` | Outline/bookmark navigation | Nested outline tree | Stable | Parses binary native buffer. |
 | `deletePageObject` | Delete one page object | Saved PDF bytes | Stable | Regenerates page content. |
 | `transformPageObject` | Affine transform one page object | Saved PDF bytes | Stable | Matrix must be invertible. |
 | `queryDocument` | Page count, metadata, permissions, page geometry | Query payload | Planned | Would fill several current worker gaps. |
 | `mutatePages` | Insert/delete/copy/import pages | Saved PDF bytes | Planned | Needs protocol design for one vs two input PDFs. |
 
-## Best Next Documentation Targets
+## Documentation Gap Coverage
 
-1. Add `docs/EXAMPLES.md` with task-oriented copy-paste flows.
-2. Add a worker protocol schema table with required/optional payload fields per message.
-3. Add a native API ownership table for every function that allocates output buffers.
-4. Add implementation notes for annotation appearance generation and metadata internals.
+These previously identified gaps are now covered:
+
+| Gap | Document |
+|---|---|
+| Task-oriented copy-paste flows | [Examples](EXAMPLES.md) |
+| Worker protocol schema with required/optional fields | [Worker Protocol Reference](WORKER_PROTOCOL.md) |
+| Native API ownership and output-buffer rules | [Memory Ownership](MEMORY_OWNERSHIP.md) |
+| Annotation appearance, metadata, PNG, render, and search internals | [Implementation Notes](IMPLEMENTATION_NOTES.md) |

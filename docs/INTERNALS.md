@@ -76,6 +76,8 @@ Current examples of internal use:
 
 When using internals, document why in the wrapper or related docs, and cover the behavior in smoke tests.
 
+For details on these implementation choices, see [Implementation Notes](IMPLEMENTATION_NOTES.md).
+
 ## Current exported methods
 
 The canonical list is in [API Reference](API.md). Source of truth in code:
@@ -116,6 +118,8 @@ Functions that return variable-size data allocate with `malloc` and write:
 - `outSizePtr`: byte size.
 
 JS must call `wasm_pdf_free_buffer(ptr)` for non-null returned buffers.
+
+For a complete ownership table, see [Memory Ownership](MEMORY_OWNERSHIP.md).
 
 ## Worker design
 

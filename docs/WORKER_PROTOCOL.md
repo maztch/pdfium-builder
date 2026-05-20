@@ -1,0 +1,219 @@
+# Worker Protocol Reference
+
+The worker accepts request messages shaped as:
+
+```js
+{ id, type, payload }
+```
+
+Successful responses:
+
+```js
+{ id, type, ok: true, payload }
+```
+
+Error responses:
+
+```js
+{ id, type, ok: false, error: { message, code, name } }
+```
+
+`id` is caller-defined and echoed back. Use a unique string per request.
+
+## Common Payload Fields
+
+| Field | Type | Required | Applies to | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | All messages | Input PDF bytes. Prefer transferable `ArrayBuffer`. |
+| `password` | string | No | All messages | Defaults to `""`. |
+| `pageIndex` | number | No | Page-scoped messages | Defaults to `0`. |
+
+## `addText`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `text` | string | No | `""` | Must be valid UTF-8 after JS encoding. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `x` | number | No | `80` | PDF user-space x. |
+| `y` | number | No | `120` | PDF user-space y. |
+| `fontSize` | number | No | `16` | Positive size recommended. |
+| `rgba` | number | No | `0xff000000` | `0xAARRGGBB`. |
+
+Returns `{ pdfBytes }`.
+
+## `addImage`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `imageFormat` | string | No | inferred | `"rgba"`, `"jpeg"`, `"jpg"`, or `"png"`. |
+| `rgbaBytes` | `ArrayBuffer` or typed array | For RGBA | | Row-major RGBA pixels. |
+| `imageBytes` | `ArrayBuffer` or typed array | For JPEG/PNG | | Encoded bytes. |
+| `jpegBytes` | `ArrayBuffer` or typed array | No | | Alternative to `imageBytes`; infers JPEG. |
+| `pngBytes` | `ArrayBuffer` or typed array | No | | Alternative to `imageBytes`; infers PNG. |
+| `imageWidth` | number | For RGBA | `0` | Pixel width for RGBA input. |
+| `imageHeight` | number | For RGBA | `0` | Pixel height for RGBA input. |
+| `x` | number | No | `0` | PDF user-space x. |
+| `y` | number | No | `0` | PDF user-space y. |
+| `displayWidth` | number | Required by native API | `0` | PDF user-space display width. |
+| `displayHeight` | number | Required by native API | `0` | PDF user-space display height. |
+
+Returns `{ pdfBytes }`.
+
+PNG support is limited to non-interlaced 8-bit grayscale, RGB, grayscale-alpha, and RGBA PNGs.
+
+## `addAnnotation`
+
+Common fields:
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `annotationType` | string | Yes | | `highlight`, `link`, `textNote`, `rectangle`, `freeText`. |
+| `pageIndex` | number | No | `0` | Target page. |
+
+Rectangle-style annotations use `left`, `bottom`, `right`, `top` in PDF user-space coordinates.
+
+| Type | Required fields | Optional fields | Returns |
+|---|---|---|---|
+| `highlight` | `left`, `bottom`, `right`, `top` | `rgba` defaults to `0x80ffff00` | `{ pdfBytes }` |
+| `link` | `left`, `bottom`, `right`, `top`, `uri` | | `{ pdfBytes }` |
+| `textNote` | `x`, `y`, `contents` | `rgba` defaults to `0xffffff00` | `{ pdfBytes }` |
+| `rectangle` | `left`, `bottom`, `right`, `top` | `rgba` defaults to `0xffff0000`, `borderWidth` defaults to `1` | `{ pdfBytes }` |
+| `freeText` | `left`, `bottom`, `right`, `top`, `contents` | `fontSize` defaults to `12`, `textRgba` and `borderRgba` default to black, `borderWidth` defaults to `1` | `{ pdfBytes }` |
+
+## `updateAnnotation`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `updateType` | string | Yes | | `rect`, `color`, `text`, or `uri`. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `annotationIndex` | number | Yes | `-1` | Zero-based annotation index. |
+
+| Type | Required fields | Returns |
+|---|---|---|
+| `rect` | `left`, `bottom`, `right`, `top` | `{ pdfBytes }` |
+| `color` | `rgba` | `{ pdfBytes }` |
+| `text` | `contents` | `{ pdfBytes }` |
+| `uri` | `uri` | `{ pdfBytes }` |
+
+## `renderPage`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `width` | number | Yes | `0` | Output pixel width. |
+| `height` | number | Yes | `0` | Output pixel height. |
+| `flags` | number | No | `0` | Use `0x01` to render annotations. |
+
+Returns `{ rgbaBytes, width, height }`.
+
+## `renderPageArea`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `left` | number | Yes | `0` | PDF user-space crop rectangle. |
+| `bottom` | number | Yes | `0` | PDF user-space crop rectangle. |
+| `right` | number | Yes | `0` | Must be greater than `left`. |
+| `top` | number | Yes | `0` | Must be greater than `bottom`. |
+| `width` | number | Yes | `0` | Output pixel width. |
+| `height` | number | Yes | `0` | Output pixel height. |
+| `flags` | number | No | `0` | Use `0x01` to render annotations. |
+
+Returns `{ rgbaBytes, width, height }`.
+
+## `queryPageObjects`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pageIndex` | number | No | `0` | Target page. |
+
+Returns `{ objects }`, where each object has:
+
+```js
+{ index, type, left, bottom, right, top }
+```
+
+Object types are listed in [API Reference](API.md#page-content-objects).
+
+## `searchPageText`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `query` | string | Yes | `""` | Search text. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `flags` | number | No | `0` | `1` match case, `2` whole word, `4` consecutive. |
+
+Returns `{ matches }`, where each match has:
+
+```js
+{ startIndex, charCount, rects }
+```
+
+## `queryOutline`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ outline }`, where `outline` is a nested bookmark tree:
+
+```js
+{
+  index: 0,
+  depth: 0,
+  title: "Chapter 1",
+  childCount: 2,
+  isOpen: true,
+  actionType: 1,
+  destination: {
+    pageIndex: 0,
+    viewMode: 1,
+    viewParams: [0, 792, 0],
+    x: 0,
+    y: 792,
+    zoom: null
+  },
+  uri: null,
+  filePath: null,
+  children: []
+}
+```
+
+`destination` is `null` when the bookmark has no local destination. URI bookmarks set `uri`; launch or remote-goto bookmarks can set `filePath`.
+
+## `deletePageObject`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pageIndex` | number | No | `0` | Target page. |
+| `objectIndex` | number | Yes | | Zero-based page object index. |
+
+Returns `{ pdfBytes }`.
+
+## `transformPageObject`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pageIndex` | number | No | `0` | Target page. |
+| `objectIndex` | number | Yes | | Zero-based page object index. |
+| `a`, `b`, `c`, `d`, `e`, `f` | number | Yes | | Affine matrix. Must be invertible. |
+
+Returns `{ pdfBytes }`.
+
+Matrix convention:
+
+```text
+x' = a*x + c*y + e
+y' = b*x + d*y + f
+```
+
+## Transferables
+
+Transfer input and output `ArrayBuffer` values when possible:
+
+```js
+worker.postMessage({ id, type, payload }, [payload.pdfBytes]);
+```
+
+After transfer, the original buffer is detached. Keep a copy if you need to reuse the same bytes for a later request.

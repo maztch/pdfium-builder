@@ -4,6 +4,8 @@ The exported API is implemented in `wasm/pdfium_edit_wrapper.cc` and linked thro
 
 All exported wrapper functions use the `wasm_pdf_*` prefix. Most mutation functions return `1` on success and `0` on failure. Query functions document their failure sentinel below. Call `wasm_pdf_last_error()` after a failure for diagnostics.
 
+For task-oriented flows, see [Examples](EXAMPLES.md). For exact native pointer and output-buffer ownership rules, see [Memory Ownership](MEMORY_OWNERSHIP.md).
+
 ## Lifecycle
 
 - `wasm_pdf_last_error()`
@@ -55,6 +57,49 @@ Supported metadata keys:
 - `Producer`
 - `CreationDate`
 - `ModDate`
+
+Metadata write internals are described in [Implementation Notes](IMPLEMENTATION_NOTES.md#metadata-writes).
+
+## Outline and bookmarks
+
+- `wasm_pdf_get_outline(handle, outPtrPtr, outSizePtr)` writes a binary depth-first outline buffer. Release non-null output with `wasm_pdf_free_buffer`.
+
+Outline result buffer layout:
+
+- `uint32`: item count
+- Per item:
+- `int32 depth`
+- `int32 childCount`: positive means open by default, negative means closed by default, zero means no children
+- `uint32 titleSize`, followed by UTF-8 title bytes
+- `uint32 actionType`: PDFium `PDFACTION_*` value
+- `int32 pageIndex`: zero-based target page, or `-1` when no local destination is available
+- `uint32 viewMode`: PDFium `PDFDEST_VIEW_*` value
+- `uint32 viewParamCount`, followed by four `double` view parameter slots
+- `uint32 locationFlags`: bit `1` for x, bit `2` for y, bit `4` for zoom
+- `double x`, `double y`, `double zoom`
+- `uint32 uriSize`, followed by URI bytes for URI actions
+- `uint32 filePathSize`, followed by file path bytes for launch or remote-goto actions
+
+Action types:
+
+- `0`: unsupported
+- `1`: goto
+- `2`: remote goto
+- `3`: URI
+- `4`: launch
+- `5`: embedded goto
+
+Destination view modes:
+
+- `0`: unknown
+- `1`: XYZ
+- `2`: Fit
+- `3`: FitH
+- `4`: FitV
+- `5`: FitR
+- `6`: FitB
+- `7`: FitBH
+- `8`: FitBV
 
 ## Text extraction and search
 
@@ -130,6 +175,8 @@ Known helper subtypes:
 - `5`: square/rectangle
 - `9`: highlight
 
+FreeText appearance generation is described in [Implementation Notes](IMPLEMENTATION_NOTES.md#freetext-annotation-appearance).
+
 ## Rendering
 
 - `wasm_pdf_render_page_rgba(handle, pageIndex, width, height, flags, outPtrPtr, outSizePtr)` renders a full page to row-major RGBA bytes.
@@ -199,3 +246,4 @@ Common render flag:
 - `49`: generate annotation appearance failed
 - `50`: load JPEG failed
 - `51`: decode PNG failed
+- `52`: outline read failed

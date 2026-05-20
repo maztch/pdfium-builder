@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
@@ -86,6 +87,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_GENERATE_ANNOTATION_AP_FAILED = 49,
   WASM_PDF_ERROR_LOAD_JPEG_FAILED = 50,
   WASM_PDF_ERROR_DECODE_PNG_FAILED = 51,
+  WASM_PDF_ERROR_OUTLINE_READ_FAILED = 52,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -256,6 +258,64 @@ void AppendDouble(std::vector<uint8_t>* data, double value) {
   uint8_t bytes[sizeof(double)];
   memcpy(bytes, &value, sizeof(double));
   data->insert(data->end(), bytes, bytes + sizeof(double));
+}
+
+void AppendBytes(std::vector<uint8_t>* data, const uint8_t* bytes, uint32_t size) {
+  AppendUint32(data, size);
+  if (bytes && size > 0) {
+    data->insert(data->end(), bytes, bytes + size);
+  }
+}
+
+bool GetBookmarkTitleUtf8(FPDF_BOOKMARK bookmark, std::vector<uint8_t>* title) {
+  if (!bookmark || !title) return false;
+
+  const unsigned long required_size = FPDFBookmark_GetTitle(bookmark, nullptr, 0);
+  if (required_size == 0) return false;
+
+  std::vector<uint8_t> utf16le(required_size);
+  const unsigned long written_size =
+      FPDFBookmark_GetTitle(bookmark, utf16le.data(), required_size);
+  if (written_size != required_size) return false;
+
+  if (utf16le.size() >= 2 && utf16le[utf16le.size() - 1] == 0 &&
+      utf16le[utf16le.size() - 2] == 0) {
+    utf16le.resize(utf16le.size() - 2);
+  }
+
+  const WideString wide = WideString::FromUTF16LE(utf16le);
+  const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
+  const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
+  title->assign(utf8_data, utf8_data + utf8.GetLength());
+  return true;
+}
+
+bool GetActionStringBytes(FPDF_DOCUMENT document,
+                          FPDF_ACTION action,
+                          bool uri,
+                          std::vector<uint8_t>* output) {
+  if (!action || !output) return false;
+
+  const unsigned long required_size = uri
+                                          ? FPDFAction_GetURIPath(document, action, nullptr, 0)
+                                          : FPDFAction_GetFilePath(action, nullptr, 0);
+  if (required_size == 0) {
+    output->clear();
+    return true;
+  }
+
+  std::vector<uint8_t> buffer(required_size);
+  const unsigned long written_size = uri
+                                         ? FPDFAction_GetURIPath(document, action, buffer.data(), required_size)
+                                         : FPDFAction_GetFilePath(action, buffer.data(), required_size);
+  if (written_size != required_size) return false;
+
+  if (!buffer.empty() && buffer.back() == 0) {
+    buffer.pop_back();
+  }
+
+  *output = std::move(buffer);
+  return true;
 }
 
 bool IsAllowedMetadataKey(const char* key) {
@@ -671,6 +731,102 @@ FPDF_DOCUMENT GetDocument(uintptr_t handle) {
   return it->second->doc;
 }
 
+bool AppendOutlineItems(FPDF_DOCUMENT document,
+                        FPDF_BOOKMARK bookmark,
+                        int depth,
+                        std::unordered_set<FPDF_BOOKMARK>* visited,
+                        uint32_t* item_count,
+                        std::vector<uint8_t>* result) {
+  static constexpr uint32_t kMaxOutlineItems = 10000;
+  if (!document || !visited || !item_count || !result || depth < 0) return false;
+
+  FPDF_BOOKMARK current = bookmark;
+  while (current) {
+    if (*item_count >= kMaxOutlineItems || visited->find(current) != visited->end()) {
+      return false;
+    }
+    visited->insert(current);
+
+    std::vector<uint8_t> title;
+    if (!GetBookmarkTitleUtf8(current, &title)) return false;
+
+    const int child_count = FPDFBookmark_GetCount(current);
+    FPDF_ACTION action = FPDFBookmark_GetAction(current);
+    const unsigned long action_type = action ? FPDFAction_GetType(action) : PDFACTION_UNSUPPORTED;
+    FPDF_DEST dest = nullptr;
+    if (action && (action_type == PDFACTION_GOTO ||
+                   action_type == PDFACTION_REMOTEGOTO ||
+                   action_type == PDFACTION_EMBEDDEDGOTO)) {
+      dest = FPDFAction_GetDest(document, action);
+    }
+    if (!dest) {
+      dest = FPDFBookmark_GetDest(document, current);
+    }
+
+    int page_index = -1;
+    unsigned long view_mode = PDFDEST_VIEW_UNKNOWN_MODE;
+    unsigned long view_param_count = 0;
+    FS_FLOAT view_params[4] = {0, 0, 0, 0};
+    uint32_t location_flags = 0;
+    FS_FLOAT x = 0;
+    FS_FLOAT y = 0;
+    FS_FLOAT zoom = 0;
+    if (dest) {
+      page_index = FPDFDest_GetDestPageIndex(document, dest);
+      view_mode = FPDFDest_GetView(dest, &view_param_count, view_params);
+      if (view_param_count > 4) view_param_count = 4;
+
+      FPDF_BOOL has_x = 0;
+      FPDF_BOOL has_y = 0;
+      FPDF_BOOL has_zoom = 0;
+      if (FPDFDest_GetLocationInPage(dest, &has_x, &has_y, &has_zoom, &x, &y, &zoom)) {
+        if (has_x) location_flags |= 1;
+        if (has_y) location_flags |= 2;
+        if (has_zoom) location_flags |= 4;
+      }
+    }
+
+    std::vector<uint8_t> uri;
+    std::vector<uint8_t> file_path;
+    if (action && action_type == PDFACTION_URI &&
+        !GetActionStringBytes(document, action, true, &uri)) {
+      return false;
+    }
+    if (action && (action_type == PDFACTION_LAUNCH || action_type == PDFACTION_REMOTEGOTO) &&
+        !GetActionStringBytes(document, action, false, &file_path)) {
+      return false;
+    }
+
+    AppendInt32(result, depth);
+    AppendInt32(result, child_count);
+    AppendBytes(result, title.data(), static_cast<uint32_t>(title.size()));
+    AppendUint32(result, static_cast<uint32_t>(action_type));
+    AppendInt32(result, page_index);
+    AppendUint32(result, static_cast<uint32_t>(view_mode));
+    AppendUint32(result, static_cast<uint32_t>(view_param_count));
+    for (int i = 0; i < 4; ++i) {
+      AppendDouble(result, view_params[i]);
+    }
+    AppendUint32(result, location_flags);
+    AppendDouble(result, x);
+    AppendDouble(result, y);
+    AppendDouble(result, zoom);
+    AppendBytes(result, uri.data(), static_cast<uint32_t>(uri.size()));
+    AppendBytes(result, file_path.data(), static_cast<uint32_t>(file_path.size()));
+
+    ++(*item_count);
+
+    FPDF_BOOKMARK child = FPDFBookmark_GetFirstChild(document, current);
+    if (child && !AppendOutlineItems(document, child, depth + 1, visited, item_count, result)) {
+      return false;
+    }
+
+    current = FPDFBookmark_GetNextSibling(document, current);
+  }
+
+  return true;
+}
+
 }  // namespace
 
 extern "C" {
@@ -1075,6 +1231,50 @@ int wasm_pdf_set_metadata(uintptr_t handle, const char* key, const char* value_u
   const std::vector<uint8_t> utf16le = Utf16StringToUtf16LeBytes(utf16);
   const WideString wide = WideString::FromUTF16LE(utf16le);
   info->SetNewFor<CPDF_String>(key, wide.AsStringView());
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_outline(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  std::vector<uint8_t> result;
+  AppendUint32(&result, 0);
+  uint32_t item_count = 0;
+  FPDF_BOOKMARK first = FPDFBookmark_GetFirstChild(doc, nullptr);
+  if (first) {
+    std::unordered_set<FPDF_BOOKMARK> visited;
+    if (!AppendOutlineItems(doc, first, 0, &visited, &item_count, &result)) {
+      SetLastError(WASM_PDF_ERROR_OUTLINE_READ_FAILED);
+      return 0;
+    }
+  }
+
+  result[0] = static_cast<uint8_t>(item_count & 0xFF);
+  result[1] = static_cast<uint8_t>((item_count >> 8) & 0xFF);
+  result[2] = static_cast<uint8_t>((item_count >> 16) & 0xFF);
+  result[3] = static_cast<uint8_t>((item_count >> 24) & 0xFF);
+
+  if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
+    return 0;
+  }
+
   ClearLastError();
   return 1;
 }

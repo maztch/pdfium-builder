@@ -92,7 +92,7 @@ try {
 
 1. Read input PDF into `Uint8Array`.
 2. Open with `wasm_pdf_open_from_bytes`.
-3. Run query APIs such as page count, page size, metadata, text extraction, search, annotations, or page objects.
+3. Run query APIs such as page count, page size, metadata, outline/bookmarks, text extraction, search, annotations, or page objects.
 4. Run mutation APIs such as page insertion, text/image insertion, annotations, metadata, geometry, or object transforms.
 5. Optionally render a full page or area to RGBA preview pixels.
 6. Save with `wasm_pdf_save_copy`.

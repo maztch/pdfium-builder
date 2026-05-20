@@ -42,16 +42,20 @@ Required tools:
 
 - [Build Guide](docs/BUILD.md): prerequisites, bootstrap, build commands, tuning, clean rebuilds.
 - [API Reference](docs/API.md): exported `wasm_pdf_*` functions, error codes, constants, binary result formats.
+- [Examples](docs/EXAMPLES.md): task-oriented copy-paste flows for worker and direct WASM usage.
 - [Feature Matrix](docs/FEATURE_MATRIX.md): capability status across native API, worker support, tests, and docs.
 - [Usage Guide](docs/USAGE.md): direct JS lifecycle, browser flow, memory cleanup, examples.
 - [Worker Guide](docs/WORKER.md): module worker setup, message protocol, request examples.
+- [Worker Protocol](docs/WORKER_PROTOCOL.md): request/response schemas and payload fields per worker message.
+- [Memory Ownership](docs/MEMORY_OWNERSHIP.md): direct WASM handle, pointer, and output-buffer ownership rules.
 - [Internals Guide](docs/INTERNALS.md): wrapper architecture, adding methods, PDFium header locations, build vs wrapper responsibilities.
+- [Implementation Notes](docs/IMPLEMENTATION_NOTES.md): non-obvious wrapper behavior and internal PDFium usage.
 - [Roadmap](docs/IMPROVEMENTS_ROADMAP.md): planned improvements and implementation notes.
 
 ## Current capability summary
 
 - Open PDF bytes, save copies, and close handles.
-- Query page count, page size, rotation, boxes, permissions, metadata, annotations, page objects, text, and text search rectangles.
+- Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, annotations, page objects, text, and text search rectangles.
 - Mutate page rotation, page boxes, page size, metadata, pages, page objects, annotations, text, and RGBA/JPEG/PNG images.
 - Render full pages or PDF-space page areas to RGBA buffers.
 - Run heavy PDF work in a module worker with balanced cleanup.

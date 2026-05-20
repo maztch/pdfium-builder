@@ -16,6 +16,8 @@ The linker already includes:
 
 ## Message protocol
 
+For the complete schema table, required fields, defaults, and return payloads, see [Worker Protocol Reference](WORKER_PROTOCOL.md).
+
 Requests use this shape:
 
 ```js
@@ -192,6 +194,19 @@ Use `searchPageText` to find text and get PDF user-space rectangles for highligh
     pageIndex: 0,
     query: "invoice",
     flags: 0,
+    password: ""
+  }
+}
+```
+
+Use `queryOutline` to build a navigation tree from PDF bookmarks:
+
+```js
+{
+  id: "request-outline",
+  type: "queryOutline",
+  payload: {
+    pdfBytes: inputBytes.buffer,
     password: ""
   }
 }
@@ -448,7 +463,7 @@ Annotation update requests also return a saved PDF. Supported `updateType` value
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `queryOutline`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 
@@ -458,3 +473,4 @@ Requests are serialized through an internal queue so multiple main-thread messag
 - Create the worker with `{ type: "module" }` when loading it without a bundler.
 - If you relocate `worker/` or `dist/`, update the paths in `worker/pdfium-worker.js`.
 - PNG insertion supports non-interlaced 8-bit grayscale, RGB, grayscale-alpha, and RGBA PNGs.
+- See [Examples](EXAMPLES.md) for complete worker flows.

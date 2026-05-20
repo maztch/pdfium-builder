@@ -53,6 +53,7 @@ const ERROR_NAMES = Object.freeze({
   49: "generate_annotation_ap_failed",
   50: "load_jpeg_failed",
   51: "decode_png_failed",
+  52: "outline_read_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -141,6 +142,94 @@ function parseSearchResults(bytes) {
   }
 
   return matches;
+}
+
+function parseOutline(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder("utf-8");
+  const flatItems = [];
+  let offset = 0;
+  const itemCount = view.getUint32(offset, true);
+  offset += 4;
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  for (let index = 0; index < itemCount; index += 1) {
+    const depth = readInt32();
+    const childCount = readInt32();
+    const title = readString();
+    const actionType = readUint32();
+    const pageIndex = readInt32();
+    const viewMode = readUint32();
+    const viewParamCount = readUint32();
+    const viewParams = [readDouble(), readDouble(), readDouble(), readDouble()].slice(0, viewParamCount);
+    const locationFlags = readUint32();
+    const x = readDouble();
+    const y = readDouble();
+    const zoom = readDouble();
+    const uri = readString();
+    const filePath = readString();
+    const destination = pageIndex >= 0
+      ? {
+          pageIndex,
+          viewMode,
+          viewParams,
+          x: locationFlags & 1 ? x : null,
+          y: locationFlags & 2 ? y : null,
+          zoom: locationFlags & 4 ? zoom : null,
+        }
+      : null;
+
+    flatItems.push({
+      index,
+      depth,
+      title,
+      childCount,
+      isOpen: childCount >= 0,
+      actionType,
+      destination,
+      uri: uri || null,
+      filePath: filePath || null,
+      children: [],
+    });
+  }
+
+  const roots = [];
+  const stack = [];
+  for (const item of flatItems) {
+    while (stack.length > item.depth) stack.pop();
+    if (stack.length === 0) {
+      roots.push(item);
+    } else {
+      stack[stack.length - 1].children.push(item);
+    }
+    stack[item.depth] = item;
+  }
+
+  return roots;
 }
 
 async function addText(payload = {}) {
@@ -810,6 +899,56 @@ async function searchPageText(payload = {}) {
   }
 }
 
+async function queryOutline(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate outline output pointers", 3);
+
+    const queried = mod.ccall(
+      "wasm_pdf_get_outline",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!queried) throwPdfiumError(mod, "Unable to query outline");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || outSize < 4) throw new PdfiumWorkerError("Outline output is invalid", 52);
+
+    const bytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { outline: parseOutline(bytes) };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function deletePageObject(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -960,6 +1099,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "searchPageText") {
     return searchPageText(message.payload);
+  }
+  if (message.type === "queryOutline") {
+    return queryOutline(message.payload);
   }
   if (message.type === "deletePageObject") {
     return deletePageObject(message.payload);
