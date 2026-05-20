@@ -37,6 +37,20 @@ Requests use this shape:
 }
 ```
 
+Use `queryDocument` to get a consolidated document summary:
+
+```js
+{
+  id: "request-document",
+  type: "queryDocument",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    metadataKeys: ["Title", "Author", "ModDate"],
+    password: ""
+  }
+}
+```
+
 For image insertion, use `type: "addImage"` with decoded row-major RGBA pixels:
 
 ```js
@@ -490,7 +504,7 @@ Annotation update requests also return a saved PDF. Supported `updateType` value
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

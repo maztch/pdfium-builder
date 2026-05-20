@@ -38,6 +38,25 @@ Create the worker:
 const worker = new Worker(new URL("../worker/pdfium-worker.js", import.meta.url), { type: "module" });
 ```
 
+## Query Document Summary
+
+```js
+const summaryBytes = inputBytes.slice();
+const summary = await requestPdfWorker(
+  worker,
+  "queryDocument",
+  {
+    pdfBytes: summaryBytes.buffer,
+    metadataKeys: ["Title", "Author", "ModDate"],
+  },
+  [summaryBytes.buffer]
+);
+
+console.log(summary.pageCount, summary.pages[0]?.width, summary.hasAttachments);
+```
+
+Use this before more specific read APIs when an app needs to populate document-level UI state.
+
 ## Add Text
 
 ```js

@@ -115,6 +115,14 @@ function stringOrDefault(value, fallback) {
   return typeof value === "string" ? value : fallback;
 }
 
+function arrayOrDefault(value, fallback) {
+  return Array.isArray(value) ? value : fallback;
+}
+
+function enabledByDefault(value) {
+  return value !== false;
+}
+
 function parseSearchResults(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const matches = [];
@@ -262,6 +270,33 @@ function parseAttachmentInfo(bytes, index) {
     mimeType: mimeType || null,
     fileSize,
   };
+}
+
+const DEFAULT_METADATA_KEYS = Object.freeze([
+  "Title",
+  "Author",
+  "Subject",
+  "Keywords",
+  "Creator",
+  "Producer",
+  "CreationDate",
+  "ModDate",
+]);
+
+const PAGE_BOXES = Object.freeze([
+  ["media", 0],
+  ["crop", 1],
+  ["bleed", 2],
+  ["trim", 3],
+  ["art", 4],
+]);
+
+function countOutlineItems(items) {
+  let count = 0;
+  for (const item of items) {
+    count += 1 + countOutlineItems(item.children || []);
+  }
+  return count;
 }
 
 async function addText(payload = {}) {
@@ -981,6 +1016,175 @@ async function queryOutline(payload = {}) {
   }
 }
 
+async function queryDocument(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const includePages = enabledByDefault(payload.includePages);
+  const includeMetadata = enabledByDefault(payload.includeMetadata);
+  const includeOutlineSummary = enabledByDefault(payload.includeOutlineSummary);
+  const includeAttachmentSummary = enabledByDefault(payload.includeAttachmentSummary);
+  const metadataKeys = arrayOrDefault(payload.metadataKeys, DEFAULT_METADATA_KEYS);
+
+  let inputPtr = 0;
+  let widthPtr = 0;
+  let heightPtr = 0;
+  let leftPtr = 0;
+  let bottomPtr = 0;
+  let rightPtr = 0;
+  let topPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  function freeOutPtr() {
+    if (outPtr) {
+      mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+      outPtr = 0;
+    }
+  }
+
+  function readOutputBytes() {
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    const bytes = outSize > 0 && outPtr ? mod.HEAPU8.slice(outPtr, outPtr + outSize) : new Uint8Array();
+    freeOutPtr();
+    return bytes;
+  }
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    widthPtr = mod._malloc(8);
+    heightPtr = mod._malloc(8);
+    leftPtr = mod._malloc(8);
+    bottomPtr = mod._malloc(8);
+    rightPtr = mod._malloc(8);
+    topPtr = mod._malloc(8);
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!inputPtr || !widthPtr || !heightPtr || !leftPtr || !bottomPtr || !rightPtr || !topPtr || !outPtrPtr || !outSizePtr) {
+      throw new PdfiumWorkerError("Unable to allocate document query buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const pageCount = mod.ccall("wasm_pdf_page_count", "number", ["number"], [handle]);
+    if (pageCount < 0) throwPdfiumError(mod, "Unable to count pages");
+
+    const permissions = mod.ccall("wasm_pdf_get_permissions", "number", ["number"], [handle]) >>> 0;
+    if (lastError(mod) !== 0) throwPdfiumError(mod, "Unable to query permissions");
+
+    const pages = [];
+    if (includePages) {
+      for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+        const gotSize = mod.ccall(
+          "wasm_pdf_get_page_size",
+          "number",
+          ["number", "number", "number", "number"],
+          [handle, pageIndex, widthPtr, heightPtr]
+        );
+        if (!gotSize) throwPdfiumError(mod, "Unable to query page size");
+
+        const rotation = mod.ccall("wasm_pdf_get_page_rotation", "number", ["number", "number"], [handle, pageIndex]);
+        if (rotation < 0) throwPdfiumError(mod, "Unable to query page rotation");
+
+        const boxes = {};
+        for (const [name, boxType] of PAGE_BOXES) {
+          const gotBox = mod.ccall(
+            "wasm_pdf_get_page_box",
+            "number",
+            ["number", "number", "number", "number", "number", "number", "number"],
+            [handle, pageIndex, boxType, leftPtr, bottomPtr, rightPtr, topPtr]
+          );
+          boxes[name] = gotBox
+            ? {
+                left: mod.getValue(leftPtr, "double"),
+                bottom: mod.getValue(bottomPtr, "double"),
+                right: mod.getValue(rightPtr, "double"),
+                top: mod.getValue(topPtr, "double"),
+              }
+            : null;
+        }
+
+        pages.push({
+          index: pageIndex,
+          width: mod.getValue(widthPtr, "double"),
+          height: mod.getValue(heightPtr, "double"),
+          rotation,
+          boxes,
+        });
+      }
+    }
+
+    const metadata = {};
+    if (includeMetadata) {
+      for (const key of metadataKeys) {
+        if (typeof key !== "string") continue;
+        const gotMetadata = mod.ccall(
+          "wasm_pdf_get_metadata",
+          "number",
+          ["number", "string", "number", "number"],
+          [handle, key, outPtrPtr, outSizePtr]
+        );
+        if (!gotMetadata) {
+          metadata[key] = null;
+          continue;
+        }
+
+        metadata[key] = new TextDecoder("utf-8").decode(readOutputBytes());
+      }
+    }
+
+    let outlineCount = null;
+    if (includeOutlineSummary) {
+      const gotOutline = mod.ccall(
+        "wasm_pdf_get_outline",
+        "number",
+        ["number", "number", "number"],
+        [handle, outPtrPtr, outSizePtr]
+      );
+      if (!gotOutline) throwPdfiumError(mod, "Unable to query outline summary");
+      outlineCount = countOutlineItems(parseOutline(readOutputBytes()));
+    }
+
+    let attachmentCount = null;
+    if (includeAttachmentSummary) {
+      attachmentCount = mod.ccall("wasm_pdf_attachment_count", "number", ["number"], [handle]);
+      if (attachmentCount < 0) throwPdfiumError(mod, "Unable to count attachments");
+    }
+
+    return {
+      pageCount,
+      permissions,
+      pages,
+      metadata,
+      outlineCount,
+      hasOutline: outlineCount === null ? null : outlineCount > 0,
+      attachmentCount,
+      hasAttachments: attachmentCount === null ? null : attachmentCount > 0,
+    };
+  } finally {
+    freeOutPtr();
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (widthPtr) mod._free(widthPtr);
+    if (heightPtr) mod._free(heightPtr);
+    if (leftPtr) mod._free(leftPtr);
+    if (bottomPtr) mod._free(bottomPtr);
+    if (rightPtr) mod._free(rightPtr);
+    if (topPtr) mod._free(topPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function queryAttachments(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -1335,6 +1539,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "queryOutline") {
     return queryOutline(message.payload);
+  }
+  if (message.type === "queryDocument") {
+    return queryDocument(message.payload);
   }
   if (message.type === "queryAttachments") {
     return queryAttachments(message.payload);

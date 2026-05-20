@@ -23,12 +23,12 @@ Status legend:
 
 | Feature | Native API | Worker support | Smoke tested | Docs | Status | Notes |
 |---|---|---:|---:|---|---|---|
-| Page count | `wasm_pdf_page_count` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Candidate for a `queryDocument` worker message. |
-| Page size | `wasm_pdf_get_page_size` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Worker currently has no page geometry query message. |
-| Page rotation query | `wasm_pdf_get_page_rotation` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Native read path is stable. |
-| Page box query | `wasm_pdf_get_page_box` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Supports media/crop/bleed/trim/art boxes. |
-| Permissions query | `wasm_pdf_get_permissions` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Native read path is stable. |
-| Metadata read | `wasm_pdf_get_metadata` | No | Yes | [API](API.md#metadata) | Partial | Candidate for worker query support. |
+| Page count | `wasm_pdf_page_count` | `queryDocument` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Included in document summaries. |
+| Page size | `wasm_pdf_get_page_size` | `queryDocument` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Included per page. |
+| Page rotation query | `wasm_pdf_get_page_rotation` | `queryDocument` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Included per page. |
+| Page box query | `wasm_pdf_get_page_box` | `queryDocument` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Supports media/crop/bleed/trim/art boxes. |
+| Permissions query | `wasm_pdf_get_permissions` | `queryDocument` | Yes | [API](API.md#page-queries-and-geometry), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Returned as unsigned permission flags. |
+| Metadata read | `wasm_pdf_get_metadata` | `queryDocument` | Yes | [API](API.md#metadata), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Supports caller-selected metadata keys. |
 | Outline/bookmarks read | `wasm_pdf_get_outline` | `queryOutline` | Yes | [API](API.md#outline-and-bookmarks), [Worker Protocol](WORKER_PROTOCOL.md#queryoutline) | Stable | Returns a depth-first navigation tree with page destinations and URI/file actions. |
 | Embedded attachment list/read | `wasm_pdf_attachment_count`, `wasm_pdf_get_attachment_info`, `wasm_pdf_get_attachment_file` | `queryAttachments`, `readAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#queryattachments) | Stable | Supports document-level embedded files. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
@@ -109,6 +109,7 @@ Status legend:
 | `updateAnnotation` | Rect, color, text, URI | Saved PDF bytes | Stable | Uses `updateType`. |
 | `renderPage` | Full-page rendering | RGBA bytes, width, height | Stable | Accepts render flags. |
 | `renderPageArea` | Area rendering | RGBA bytes, width, height | Stable | Accepts PDF-space rectangle. |
+| `queryDocument` | Page count, metadata, permissions, page geometry, outline and attachment summaries | Document summary payload | Stable | Preferred one-call document summary. |
 | `queryPageObjects` | Page object count/info | Object array | Stable | Read-only. |
 | `searchPageText` | Text search rectangles | Match array | Stable | Parses binary native buffer. |
 | `queryOutline` | Outline/bookmark navigation | Nested outline tree | Stable | Parses binary native buffer. |
@@ -117,7 +118,6 @@ Status legend:
 | `addAttachment` | Add embedded file | Saved PDF bytes | Stable | Writes document-level embedded files. |
 | `deletePageObject` | Delete one page object | Saved PDF bytes | Stable | Regenerates page content. |
 | `transformPageObject` | Affine transform one page object | Saved PDF bytes | Stable | Matrix must be invertible. |
-| `queryDocument` | Page count, metadata, permissions, page geometry | Query payload | Planned | Would fill several current worker gaps. |
 | `mutatePages` | Insert/delete/copy/import pages | Saved PDF bytes | Planned | Needs protocol design for one vs two input PDFs. |
 
 ## Documentation Gap Coverage

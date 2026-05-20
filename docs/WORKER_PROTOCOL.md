@@ -28,6 +28,47 @@ Error responses:
 | `password` | string | No | All messages | Defaults to `""`. |
 | `pageIndex` | number | No | Page-scoped messages | Defaults to `0`. |
 
+## `queryDocument`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `password` | string | No | `""` | PDF password. |
+| `includePages` | boolean | No | `true` | Include page size, rotation, and boxes. |
+| `includeMetadata` | boolean | No | `true` | Include selected metadata keys. |
+| `metadataKeys` | string[] | No | common keys | Metadata keys to read. |
+| `includeOutlineSummary` | boolean | No | `true` | Include `outlineCount` and `hasOutline`. |
+| `includeAttachmentSummary` | boolean | No | `true` | Include `attachmentCount` and `hasAttachments`. |
+
+Returns a document summary:
+
+```js
+{
+  pageCount: 1,
+  permissions: 4294967295,
+  pages: [
+    {
+      index: 0,
+      width: 612,
+      height: 792,
+      rotation: 0,
+      boxes: {
+        media: { left: 0, bottom: 0, right: 612, top: 792 },
+        crop: null,
+        bleed: null,
+        trim: null,
+        art: null
+      }
+    }
+  ],
+  metadata: { Title: "Example" },
+  outlineCount: 3,
+  hasOutline: true,
+  attachmentCount: 1,
+  hasAttachments: true
+}
+```
+
 ## `addText`
 
 | Field | Type | Required | Default | Notes |
