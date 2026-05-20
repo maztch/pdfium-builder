@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -11,6 +12,7 @@
 #include "public/fpdf_edit.h"
 #include "public/fpdf_ppo.h"
 #include "public/fpdf_save.h"
+#include "public/fpdf_transformpage.h"
 #include "public/fpdfview.h"
 
 namespace {
@@ -42,6 +44,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_PDFIUM_PASSWORD = 23,
   WASM_PDF_ERROR_PDFIUM_SECURITY = 24,
   WASM_PDF_ERROR_PDFIUM_PAGE = 25,
+  WASM_PDF_ERROR_PAGE_GEOMETRY_FAILED = 26,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -130,6 +133,72 @@ bool DecodeUtf8ToUtf16(const char* input, std::u16string* output) {
   }
 
   return true;
+}
+
+enum WasmPdfPageBox : int {
+  WASM_PDF_PAGE_BOX_MEDIA = 0,
+  WASM_PDF_PAGE_BOX_CROP = 1,
+  WASM_PDF_PAGE_BOX_BLEED = 2,
+  WASM_PDF_PAGE_BOX_TRIM = 3,
+  WASM_PDF_PAGE_BOX_ART = 4,
+};
+
+bool IsValidPageBox(int box_type) {
+  return box_type >= WASM_PDF_PAGE_BOX_MEDIA && box_type <= WASM_PDF_PAGE_BOX_ART;
+}
+
+bool IsValidPageRect(double left, double bottom, double right, double top) {
+  return std::isfinite(left) && std::isfinite(bottom) && std::isfinite(right) &&
+         std::isfinite(top) && right > left && top > bottom;
+}
+
+bool GetPageBox(FPDF_PAGE page,
+                int box_type,
+                float* left,
+                float* bottom,
+                float* right,
+                float* top) {
+  switch (box_type) {
+    case WASM_PDF_PAGE_BOX_MEDIA:
+      return FPDFPage_GetMediaBox(page, left, bottom, right, top);
+    case WASM_PDF_PAGE_BOX_CROP:
+      return FPDFPage_GetCropBox(page, left, bottom, right, top);
+    case WASM_PDF_PAGE_BOX_BLEED:
+      return FPDFPage_GetBleedBox(page, left, bottom, right, top);
+    case WASM_PDF_PAGE_BOX_TRIM:
+      return FPDFPage_GetTrimBox(page, left, bottom, right, top);
+    case WASM_PDF_PAGE_BOX_ART:
+      return FPDFPage_GetArtBox(page, left, bottom, right, top);
+    default:
+      return false;
+  }
+}
+
+void SetPageBox(FPDF_PAGE page,
+                int box_type,
+                float left,
+                float bottom,
+                float right,
+                float top) {
+  switch (box_type) {
+    case WASM_PDF_PAGE_BOX_MEDIA:
+      FPDFPage_SetMediaBox(page, left, bottom, right, top);
+      return;
+    case WASM_PDF_PAGE_BOX_CROP:
+      FPDFPage_SetCropBox(page, left, bottom, right, top);
+      return;
+    case WASM_PDF_PAGE_BOX_BLEED:
+      FPDFPage_SetBleedBox(page, left, bottom, right, top);
+      return;
+    case WASM_PDF_PAGE_BOX_TRIM:
+      FPDFPage_SetTrimBox(page, left, bottom, right, top);
+      return;
+    case WASM_PDF_PAGE_BOX_ART:
+      FPDFPage_SetArtBox(page, left, bottom, right, top);
+      return;
+    default:
+      return;
+  }
 }
 
 struct MemWriter {
@@ -331,6 +400,141 @@ int wasm_pdf_get_page_rotation(uintptr_t handle, int page_index) {
 
   ClearLastError();
   return rotation;
+}
+
+int wasm_pdf_set_page_rotation(uintptr_t handle, int page_index, int rotation) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (rotation < 0 || rotation > 3) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDFPage_SetRotation(page, rotation);
+  const int actual_rotation = FPDFPage_GetRotation(page);
+  FPDF_ClosePage(page);
+
+  if (actual_rotation != rotation) {
+    SetLastError(WASM_PDF_ERROR_PAGE_GEOMETRY_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_page_box(uintptr_t handle,
+                          int page_index,
+                          int box_type,
+                          double* left,
+                          double* bottom,
+                          double* right,
+                          double* top) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!left || !bottom || !right || !top || !IsValidPageBox(box_type)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *left = 0;
+  *bottom = 0;
+  *right = 0;
+  *top = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  float box_left = 0;
+  float box_bottom = 0;
+  float box_right = 0;
+  float box_top = 0;
+  const bool ok = GetPageBox(page, box_type, &box_left, &box_bottom, &box_right, &box_top);
+  FPDF_ClosePage(page);
+
+  if (!ok) {
+    SetLastError(WASM_PDF_ERROR_PAGE_GEOMETRY_FAILED);
+    return 0;
+  }
+
+  *left = box_left;
+  *bottom = box_bottom;
+  *right = box_right;
+  *top = box_top;
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_page_box(uintptr_t handle,
+                          int page_index,
+                          int box_type,
+                          double left,
+                          double bottom,
+                          double right,
+                          double top) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!IsValidPageBox(box_type) || !IsValidPageRect(left, bottom, right, top)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  SetPageBox(page,
+             box_type,
+             static_cast<float>(left),
+             static_cast<float>(bottom),
+             static_cast<float>(right),
+             static_cast<float>(top));
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_page_size(uintptr_t handle, int page_index, double width, double height) {
+  if (!std::isfinite(width) || !std::isfinite(height) || width <= 0 || height <= 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+  return wasm_pdf_set_page_box(handle, page_index, WASM_PDF_PAGE_BOX_MEDIA, 0, 0, width, height);
 }
 
 uint32_t wasm_pdf_get_permissions(uintptr_t handle) {

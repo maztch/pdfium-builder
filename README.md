@@ -75,6 +75,10 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_page_count(handle)`
 - `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)`
 - `wasm_pdf_get_page_rotation(handle, pageIndex)`
+- `wasm_pdf_set_page_rotation(handle, pageIndex, rotation)`
+- `wasm_pdf_get_page_box(handle, pageIndex, boxType, leftPtr, bottomPtr, rightPtr, topPtr)`
+- `wasm_pdf_set_page_box(handle, pageIndex, boxType, left, bottom, right, top)`
+- `wasm_pdf_set_page_size(handle, pageIndex, width, height)`
 - `wasm_pdf_get_permissions(handle)`
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)`
 - `wasm_pdf_delete_page(handle, pageIndex)`
@@ -113,27 +117,41 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `23`: PDFium password error
 - `24`: PDFium security error
 - `25`: PDFium page error
+- `26`: page geometry failed
 
 Query return conventions:
 
 - `wasm_pdf_page_count(handle)` returns a page count, or `-1` on failure.
-- `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)` returns `1` on success and writes doubles to `widthPtr` / `heightPtr`; it returns `0` on failure.
+- `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)` returns `1` on success and writes doubles to `widthPtr` / `heightPtr`; it returns `0` on failure. PDFium reports rotation-aware page dimensions here, so a 90/270 degree page may have width and height swapped relative to the media box.
 - `wasm_pdf_get_page_rotation(handle, pageIndex)` returns `0`, `1`, `2`, or `3` for 0, 90, 180, or 270 degrees clockwise; it returns `-1` on failure.
+- `wasm_pdf_set_page_rotation(handle, pageIndex, rotation)` returns `1` on success and `0` on failure. `rotation` must be `0`, `1`, `2`, or `3`.
+- `wasm_pdf_get_page_box(handle, pageIndex, boxType, leftPtr, bottomPtr, rightPtr, topPtr)` returns `1` on success and writes doubles to the output pointers; it returns `0` on failure.
+- `wasm_pdf_set_page_box(handle, pageIndex, boxType, left, bottom, right, top)` returns `1` on success and `0` on failure. `right` must be greater than `left`, and `top` must be greater than `bottom`.
+- `wasm_pdf_set_page_size(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. It sets the page media box to `[0, 0, width, height]`.
 - `wasm_pdf_get_permissions(handle)` returns PDF permission flags. Unprotected or owner-unlocked documents usually return `0xffffffff`; `0` indicates failure when paired with a non-zero `wasm_pdf_last_error()`.
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. A `pageIndex` larger than the last page appends.
 - `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)` imports one source page into the destination document. `dstPageIndex` may equal the destination page count to append.
 - `wasm_pdf_import_pages(srcHandle, pageRange, dstHandle, dstPageIndex)` imports a one-based PDFium page range like `"1,3,5-7"`. Pass an empty string to import all source pages. `dstPageIndex` may equal the destination page count to append.
 
+Page box types:
+
+- `0`: media box
+- `1`: crop box
+- `2`: bleed box
+- `3`: trim box
+- `4`: art box
+
 ## Browser usage flow
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
-3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, and `wasm_pdf_get_permissions`
+3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, and `wasm_pdf_get_permissions`
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
-5. Call `wasm_pdf_add_text_page`
-6. Call `wasm_pdf_save_copy`
-7. Create a Blob and download/save
+5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
+6. Call `wasm_pdf_add_text_page`
+7. Call `wasm_pdf_save_copy`
+8. Create a Blob and download/save
 
 See: `examples/browser_add_text_example.js`
 
@@ -195,7 +213,7 @@ You can improve runtime behavior by:
 - Validating Unicode rendering/extraction across target viewers and fonts
 - Embedding/loading custom fonts instead of only using `"Helvetica"`
 - Adding structured error codes (instead of only `0/1`)
-- Adding APIs for image placement, metadata, page geometry, etc.
+- Adding APIs for image placement, metadata, text extraction, etc.
 
 ## Notes and caveats
 

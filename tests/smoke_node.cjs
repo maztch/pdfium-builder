@@ -52,6 +52,10 @@ async function main() {
   let invalidTextPtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
+  let leftPtr = 0;
+  let bottomPtr = 0;
+  let rightPtr = 0;
+  let topPtr = 0;
 
   try {
     assert.equal(mod.ccall('wasm_pdfium_init', 'number', [], []), 1, 'PDFium init failed');
@@ -86,8 +90,16 @@ async function main() {
 
     widthPtr = mod._malloc(8);
     heightPtr = mod._malloc(8);
+    leftPtr = mod._malloc(8);
+    bottomPtr = mod._malloc(8);
+    rightPtr = mod._malloc(8);
+    topPtr = mod._malloc(8);
     assert.notEqual(widthPtr, 0, 'width malloc failed');
     assert.notEqual(heightPtr, 0, 'height malloc failed');
+    assert.notEqual(leftPtr, 0, 'left malloc failed');
+    assert.notEqual(bottomPtr, 0, 'bottom malloc failed');
+    assert.notEqual(rightPtr, 0, 'right malloc failed');
+    assert.notEqual(topPtr, 0, 'top malloc failed');
 
     const gotPageSize = mod.ccall(
       'wasm_pdf_get_page_size',
@@ -116,6 +128,67 @@ async function main() {
     const invalidRotation = mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [handle, 99]);
     assert.equal(invalidRotation, -1, 'invalid page rotation query should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 6, 'invalid page rotation should report load page failure');
+
+    const gotMediaBox = mod.ccall(
+      'wasm_pdf_get_page_box',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 0, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(gotMediaBox, 1, 'media box should be readable');
+    assert.equal(mod.getValue(leftPtr, 'double'), 0, 'media left should match fixture');
+    assert.equal(mod.getValue(bottomPtr, 'double'), 0, 'media bottom should match fixture');
+    assert.equal(mod.getValue(rightPtr, 'double'), 612, 'media right should match fixture');
+    assert.equal(mod.getValue(topPtr, 'double'), 792, 'media top should match fixture');
+
+    const setPageSize = mod.ccall(
+      'wasm_pdf_set_page_size',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, 420, 540]
+    );
+    assert.equal(setPageSize, 1, 'set page size should succeed');
+    assert.equal(mod.ccall('wasm_pdf_get_page_size', 'number', ['number', 'number', 'number', 'number'], [handle, 0, widthPtr, heightPtr]), 1, 'updated page size should be readable');
+    assert.equal(mod.getValue(widthPtr, 'double'), 420, 'updated page width should match');
+    assert.equal(mod.getValue(heightPtr, 'double'), 540, 'updated page height should match');
+
+    const setCropBox = mod.ccall(
+      'wasm_pdf_set_page_box',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, 10, 20, 400, 500]
+    );
+    assert.equal(setCropBox, 1, 'set crop box should succeed');
+
+    const gotCropBox = mod.ccall(
+      'wasm_pdf_get_page_box',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(gotCropBox, 1, 'crop box should be readable after set');
+    assert.equal(mod.getValue(leftPtr, 'double'), 10, 'crop left should match');
+    assert.equal(mod.getValue(bottomPtr, 'double'), 20, 'crop bottom should match');
+    assert.equal(mod.getValue(rightPtr, 'double'), 400, 'crop right should match');
+    assert.equal(mod.getValue(topPtr, 'double'), 500, 'crop top should match');
+
+    const invalidBox = mod.ccall(
+      'wasm_pdf_get_page_box',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 99, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(invalidBox, 0, 'invalid box type should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid box type should report invalid argument');
+
+    const setRotation = mod.ccall(
+      'wasm_pdf_set_page_rotation',
+      'number',
+      ['number', 'number', 'number'],
+      [handle, 0, 1]
+    );
+    assert.equal(setRotation, 1, 'set page rotation should succeed');
+    assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [handle, 0]), 1, 'page rotation should update');
 
     const permissions = mod.ccall('wasm_pdf_get_permissions', 'number', ['number'], [handle]);
     assert.equal(permissions >>> 0, 0xffffffff, 'unprotected fixture should report full permissions');
@@ -248,7 +321,17 @@ async function main() {
     );
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
-    assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 0, 'saved PDF rotation should remain zero');
+    assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
+    assert.equal(mod.ccall(
+      'wasm_pdf_get_page_box',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [reopened, 0, 0, leftPtr, bottomPtr, rightPtr, topPtr]
+    ), 1, 'saved PDF media box should be readable');
+    assert.equal(mod.getValue(leftPtr, 'double'), 0, 'saved media left should persist');
+    assert.equal(mod.getValue(bottomPtr, 'double'), 0, 'saved media bottom should persist');
+    assert.equal(mod.getValue(rightPtr, 'double'), 420, 'saved media right should persist');
+    assert.equal(mod.getValue(topPtr, 'double'), 540, 'saved media top should persist');
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
@@ -259,6 +342,10 @@ async function main() {
     if (invalidTextPtr) mod._free(invalidTextPtr);
     if (widthPtr) mod._free(widthPtr);
     if (heightPtr) mod._free(heightPtr);
+    if (leftPtr) mod._free(leftPtr);
+    if (bottomPtr) mod._free(bottomPtr);
+    if (rightPtr) mod._free(rightPtr);
+    if (topPtr) mod._free(topPtr);
     if (inputPtr) mod._free(inputPtr);
     if (outPtrPtr) mod._free(outPtrPtr);
     if (outSizePtr) mod._free(outSizePtr);
