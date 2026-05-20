@@ -93,6 +93,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `12`: save failed
 - `13`: write failed
 - `14`: output too large
+- `15`: invalid UTF-8 text
 - `20`: PDFium unknown error
 - `21`: PDFium file error
 - `22`: PDFium format error
@@ -146,7 +147,7 @@ Common improvements:
 ### C) Wrapper-level improvements (`wasm/pdfium_edit_wrapper.cc`)
 
 You can improve runtime behavior by:
-- Replacing ASCII-only UTF-8 fallback with full UTF-8 -> UTF-16 conversion
+- Validating Unicode rendering/extraction across target viewers and fonts
 - Embedding/loading custom fonts instead of only using `"Helvetica"`
 - Adding structured error codes (instead of only `0/1`)
 - Adding APIs for page insertion/removal, image placement, metadata, etc.

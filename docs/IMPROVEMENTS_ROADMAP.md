@@ -5,13 +5,13 @@ This file lists practical improvements and concrete steps for each one.
 ## 1) Full Unicode text support
 
 ### Why
-Current wrapper uses minimal ASCII-safe conversion.
+The wrapper now performs strict UTF-8 -> UTF-16 conversion. Remaining work is validating output behavior across PDF viewers and font coverage.
 
 ### Steps
-1. Implement robust UTF-8 -> UTF-16 conversion in `wasm/pdfium_edit_wrapper.cc`.
-2. Add tests with accented, CJK, and emoji inputs.
+1. Done: Implement robust UTF-8 -> UTF-16 conversion in `wasm/pdfium_edit_wrapper.cc`.
+2. Done: Add smoke coverage with accented, CJK, emoji, and malformed UTF-8 inputs.
 3. Validate resulting text extraction/rendering in target viewers.
-4. Keep fallback/error path for malformed UTF-8.
+4. Keep explicit error handling for malformed UTF-8.
 
 ## 2) Font embedding and custom fonts
 

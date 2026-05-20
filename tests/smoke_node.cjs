@@ -46,6 +46,7 @@ async function main() {
   let outSizePtr = 0;
   let outPtr = 0;
   let handle = 0;
+  let invalidTextPtr = 0;
 
   try {
     assert.equal(mod.ccall('wasm_pdfium_init', 'number', [], []), 1, 'PDFium init failed');
@@ -74,13 +75,27 @@ async function main() {
     assert.notEqual(handle, 0, 'open input PDF failed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'successful open should clear last error');
 
+    invalidTextPtr = mod._malloc(3);
+    assert.notEqual(invalidTextPtr, 0, 'invalid text malloc failed');
+    mod.HEAPU8.set([0xc3, 0x28, 0], invalidTextPtr);
+
+    const invalidTextAdded = mod.ccall(
+      'wasm_pdf_add_text_page',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, invalidTextPtr, 72, 690, 18, 0xff990000]
+    );
+    assert.equal(invalidTextAdded, 0, 'malformed UTF-8 text should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 15, 'malformed text should report invalid UTF-8');
+
     const added = mod.ccall(
       'wasm_pdf_add_text_page',
       'number',
       ['number', 'number', 'string', 'number', 'number', 'number', 'number'],
-      [handle, 0, 'Smoke test', 72, 720, 18, 0xff003366]
+      [handle, 0, 'Smoke test: cafe accent cafe\u0301, CJK \u4e2d\u6587, emoji \ud83d\ude00', 72, 720, 18, 0xff003366]
     );
     assert.equal(added, 1, 'add text failed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid UTF-8 add text should clear last error');
 
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
@@ -116,6 +131,7 @@ async function main() {
   } finally {
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
+    if (invalidTextPtr) mod._free(invalidTextPtr);
     if (inputPtr) mod._free(inputPtr);
     if (outPtrPtr) mod._free(outPtrPtr);
     if (outSizePtr) mod._free(outSizePtr);

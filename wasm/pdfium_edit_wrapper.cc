@@ -30,6 +30,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_SAVE_FAILED = 12,
   WASM_PDF_ERROR_WRITE_FAILED = 13,
   WASM_PDF_ERROR_OUTPUT_TOO_LARGE = 14,
+  WASM_PDF_ERROR_INVALID_UTF8 = 15,
   WASM_PDF_ERROR_PDFIUM_UNKNOWN = 20,
   WASM_PDF_ERROR_PDFIUM_FILE = 21,
   WASM_PDF_ERROR_PDFIUM_FORMAT = 22,
@@ -67,6 +68,63 @@ WasmPdfError PdfiumLastErrorToWasmError(WasmPdfError fallback) {
     default:
       return fallback;
   }
+}
+
+bool IsUtf8ContinuationByte(unsigned char value) {
+  return (value & 0xC0) == 0x80;
+}
+
+bool DecodeUtf8ToUtf16(const char* input, std::u16string* output) {
+  if (!input || !output) return false;
+
+  output->clear();
+  const auto* bytes = reinterpret_cast<const unsigned char*>(input);
+
+  while (*bytes) {
+    uint32_t code_point = 0;
+    uint32_t min_code_point = 0;
+    int extra_bytes = 0;
+    const unsigned char first = *bytes++;
+
+    if (first < 0x80) {
+      code_point = first;
+    } else if (first >= 0xC2 && first <= 0xDF) {
+      code_point = first & 0x1F;
+      min_code_point = 0x80;
+      extra_bytes = 1;
+    } else if (first >= 0xE0 && first <= 0xEF) {
+      code_point = first & 0x0F;
+      min_code_point = 0x800;
+      extra_bytes = 2;
+    } else if (first >= 0xF0 && first <= 0xF4) {
+      code_point = first & 0x07;
+      min_code_point = 0x10000;
+      extra_bytes = 3;
+    } else {
+      return false;
+    }
+
+    for (int i = 0; i < extra_bytes; ++i) {
+      const unsigned char next = *bytes++;
+      if (!IsUtf8ContinuationByte(next)) return false;
+      code_point = (code_point << 6) | (next & 0x3F);
+    }
+
+    if (code_point < min_code_point || code_point > 0x10FFFF ||
+        (code_point >= 0xD800 && code_point <= 0xDFFF)) {
+      return false;
+    }
+
+    if (code_point <= 0xFFFF) {
+      output->push_back(static_cast<char16_t>(code_point));
+    } else {
+      code_point -= 0x10000;
+      output->push_back(static_cast<char16_t>(0xD800 + (code_point >> 10)));
+      output->push_back(static_cast<char16_t>(0xDC00 + (code_point & 0x3FF)));
+    }
+  }
+
+  return true;
 }
 
 struct MemWriter {
@@ -208,6 +266,12 @@ int wasm_pdf_add_text_page(uintptr_t handle,
     return 0;
   }
 
+  std::u16string utf16;
+  if (!DecodeUtf8ToUtf16(text_utf8, &utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
   FPDF_DOCUMENT doc = it->second->doc;
   FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
   if (!page) {
@@ -220,18 +284,6 @@ int wasm_pdf_add_text_page(uintptr_t handle,
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_CREATE_TEXT_FAILED);
     return 0;
-  }
-
-  std::u16string utf16;
-  while (*text_utf8) {
-    unsigned char c = static_cast<unsigned char>(*text_utf8++);
-    if (c < 0x80) {
-      utf16.push_back(static_cast<char16_t>(c));
-    } else {
-      // Fallback for non-ASCII text in this minimal example.
-      utf16.push_back(u'?');
-      while ((*text_utf8 & 0xC0) == 0x80) text_utf8++;
-    }
   }
 
   if (!FPDFText_SetText(text_obj, reinterpret_cast<const unsigned short*>(utf16.c_str()))) {
