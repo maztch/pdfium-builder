@@ -83,6 +83,9 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)`
 - `wasm_pdf_set_metadata(handle, key, value)`
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)`
+- `wasm_pdf_page_object_count(handle, pageIndex)`
+- `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)`
+- `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)`
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)`
 - `wasm_pdf_delete_page(handle, pageIndex)`
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)`
@@ -134,6 +137,9 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `34`: set image matrix failed
 - `35`: create render bitmap failed
 - `36`: fill render bitmap failed
+- `37`: page object lookup failed
+- `38`: page object bounds failed
+- `39`: page object delete failed
 
 Query return conventions:
 
@@ -148,6 +154,9 @@ Query return conventions:
 - `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)` returns `1` on success and writes a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_set_metadata(handle, key, value)` returns `1` on success and `0` on failure. `value` must be valid UTF-8.
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` returns `1` on success and writes extracted page text as a UTF-8 byte buffer plus size. Release non-null output with `wasm_pdf_free_buffer`.
+- `wasm_pdf_page_object_count(handle, pageIndex)` returns the number of page content objects, or `-1` on failure.
+- `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)` returns `1` on success and writes the object type plus PDF user-space bounds.
+- `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object from the page, regenerates page content, and returns `1` on success.
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. A `pageIndex` larger than the last page appends.
 - `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)` imports one source page into the destination document. `dstPageIndex` may equal the destination page count to append.
@@ -164,6 +173,15 @@ Page box types:
 - `3`: trim box
 - `4`: art box
 
+Page object types:
+
+- `0`: unknown
+- `1`: text
+- `2`: path
+- `3`: image
+- `4`: shading
+- `5`: form
+
 Metadata keys:
 
 - `Title`
@@ -179,11 +197,11 @@ Metadata keys:
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
-3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, and `wasm_pdf_get_page_text`
+3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, `wasm_pdf_get_page_box`, `wasm_pdf_get_permissions`, `wasm_pdf_get_metadata`, `wasm_pdf_get_page_text`, `wasm_pdf_page_object_count`, and `wasm_pdf_get_page_object_info`
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
-7. Optionally call `wasm_pdf_add_text_page` or `wasm_pdf_add_rgba_image_page`
+7. Optionally call `wasm_pdf_add_text_page`, `wasm_pdf_add_rgba_image_page`, or `wasm_pdf_delete_page_object`
 8. Optionally call `wasm_pdf_render_page_rgba` or `wasm_pdf_render_page_area_rgba` for preview pixels
 9. Call `wasm_pdf_save_copy`
 10. Create a Blob and download/save
@@ -200,6 +218,8 @@ Supported message types:
 - `addImage`: payload includes `pdfBytes`, `rgbaBytes`, `imageWidth`, `imageHeight`, `x`, `y`, `displayWidth`, and `displayHeight`.
 - `renderPage`: payload includes `pdfBytes`, `width`, `height`, and optional `pageIndex`, `flags`, and `password`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.
+- `queryPageObjects`: payload includes `pdfBytes` and optional `pageIndex`; response payload includes `objects`.
+- `deletePageObject`: payload includes `pdfBytes`, `pageIndex`, and `objectIndex`; response payload includes `pdfBytes`.
 
 ```js
 const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url), { type: "module" });

@@ -94,6 +94,33 @@ For cropped previews, use `type: "renderPageArea"` with a PDF user-space rectang
 }
 ```
 
+For object selection UIs, use `queryPageObjects` and `deletePageObject`:
+
+```js
+{
+  id: "request-5",
+  type: "queryPageObjects",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-6",
+  type: "deletePageObject",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    objectIndex: 1,
+    password: ""
+  }
+}
+```
+
 Successful responses use this shape:
 
 ```js
@@ -224,9 +251,22 @@ worker.postMessage(
 );
 ```
 
+Page object queries return object indexes, types, and PDF user-space bounds:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "queryPageObjects",
+    payload: { pdfBytes: inputBytes.buffer, pageIndex: 0 },
+  },
+  [inputBytes.buffer]
+);
+```
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, and `renderPageArea` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, `renderPageArea`, `queryPageObjects`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

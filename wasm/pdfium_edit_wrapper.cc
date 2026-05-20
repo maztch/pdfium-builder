@@ -64,6 +64,9 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_SET_IMAGE_MATRIX_FAILED = 34,
   WASM_PDF_ERROR_CREATE_RENDER_BITMAP_FAILED = 35,
   WASM_PDF_ERROR_FILL_RENDER_BITMAP_FAILED = 36,
+  WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED = 37,
+  WASM_PDF_ERROR_PAGE_OBJECT_BOUNDS_FAILED = 38,
+  WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED = 39,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -805,6 +808,180 @@ int wasm_pdf_get_page_text(uintptr_t handle,
   const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
   const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
   if (!CopyBytesToMalloc(utf8_data, utf8.GetLength(), out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_page_object_count(uintptr_t handle, int page_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return -1;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  FPDF_ClosePage(page);
+
+  if (object_count < 0) {
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return -1;
+  }
+
+  ClearLastError();
+  return object_count;
+}
+
+int wasm_pdf_get_page_object_info(uintptr_t handle,
+                                  int page_index,
+                                  int object_index,
+                                  int* type,
+                                  double* left,
+                                  double* bottom,
+                                  double* right,
+                                  double* top) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!type || !left || !bottom || !right || !top || object_index < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *type = FPDF_PAGEOBJ_UNKNOWN;
+  *left = 0;
+  *bottom = 0;
+  *right = 0;
+  *top = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  if (object_count < 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+  if (object_index >= object_count) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, object_index);
+  if (!object) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+
+  float object_left = 0;
+  float object_bottom = 0;
+  float object_right = 0;
+  float object_top = 0;
+  if (!FPDFPageObj_GetBounds(object,
+                             &object_left,
+                             &object_bottom,
+                             &object_right,
+                             &object_top)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_BOUNDS_FAILED);
+    return 0;
+  }
+
+  *type = FPDFPageObj_GetType(object);
+  *left = object_left;
+  *bottom = object_bottom;
+  *right = object_right;
+  *top = object_top;
+  FPDF_ClosePage(page);
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_delete_page_object(uintptr_t handle, int page_index, int object_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (object_index < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  if (object_count < 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+  if (object_index >= object_count) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, object_index);
+  if (!object) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+
+  if (!FPDFPage_RemoveObject(page, object)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED);
+    return 0;
+  }
+  FPDFPageObj_Destroy(object);
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return 0;
+  }
+
+  const int updated_count = FPDFPage_CountObjects(page);
+  FPDF_ClosePage(page);
+  if (updated_count != object_count - 1) {
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED);
     return 0;
   }
 

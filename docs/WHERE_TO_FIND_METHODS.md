@@ -20,6 +20,9 @@ Current exported functions are the `extern "C"` methods named like:
 - `wasm_pdf_get_metadata`
 - `wasm_pdf_set_metadata`
 - `wasm_pdf_get_page_text`
+- `wasm_pdf_page_object_count`
+- `wasm_pdf_get_page_object_info`
+- `wasm_pdf_delete_page_object`
 - `wasm_pdf_insert_blank_page`
 - `wasm_pdf_delete_page`
 - `wasm_pdf_copy_page`
@@ -70,5 +73,5 @@ Generated JS glue in:
 
 You can grep to confirm a symbol exists:
 ```bash
-rg -n "wasm_pdf_add_text_page|wasm_pdf_add_rgba_image_page|wasm_pdf_render_page_rgba|wasm_pdf_render_page_area_rgba|wasm_pdf_save_copy" dist/pdfium.js
+rg -n "wasm_pdf_page_object_count|wasm_pdf_add_text_page|wasm_pdf_add_rgba_image_page|wasm_pdf_render_page_rgba|wasm_pdf_render_page_area_rgba|wasm_pdf_save_copy" dist/pdfium.js
 ```

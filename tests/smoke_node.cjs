@@ -58,6 +58,7 @@ async function main() {
   let renderPtr = 0;
   let renderPtrPtr = 0;
   let renderSizePtr = 0;
+  let typePtr = 0;
   let widthPtr = 0;
   let heightPtr = 0;
   let leftPtr = 0;
@@ -101,14 +102,19 @@ async function main() {
     assert.equal(pageCount, 1, 'page count should report one page');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'page count should clear last error');
 
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 0, 'empty fixture should start with zero page objects');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'page object count should clear last error');
+
     widthPtr = mod._malloc(8);
     heightPtr = mod._malloc(8);
+    typePtr = mod._malloc(4);
     leftPtr = mod._malloc(8);
     bottomPtr = mod._malloc(8);
     rightPtr = mod._malloc(8);
     topPtr = mod._malloc(8);
     assert.notEqual(widthPtr, 0, 'width malloc failed');
     assert.notEqual(heightPtr, 0, 'height malloc failed');
+    assert.notEqual(typePtr, 0, 'type malloc failed');
     assert.notEqual(leftPtr, 0, 'left malloc failed');
     assert.notEqual(bottomPtr, 0, 'bottom malloc failed');
     assert.notEqual(rightPtr, 0, 'right malloc failed');
@@ -368,6 +374,50 @@ async function main() {
     assert.equal(addedImage, 1, 'add RGBA image should succeed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid image insert should clear last error');
 
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 2, 'text and image insert should add two page objects');
+
+    const gotTextObject = mod.ccall(
+      'wasm_pdf_get_page_object_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 0, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(gotTextObject, 1, 'text page object info should be readable');
+    assert.equal(mod.getValue(typePtr, 'i32'), 1, 'first object should be text');
+    assert.ok(mod.getValue(rightPtr, 'double') > mod.getValue(leftPtr, 'double'), 'text object bounds should have width');
+    assert.ok(mod.getValue(topPtr, 'double') > mod.getValue(bottomPtr, 'double'), 'text object bounds should have height');
+
+    const gotImageObject = mod.ccall(
+      'wasm_pdf_get_page_object_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(gotImageObject, 1, 'image page object info should be readable');
+    assert.equal(mod.getValue(typePtr, 'i32'), 3, 'second object should be image');
+    assert.equal(mod.getValue(leftPtr, 'double'), 72, 'image object left should match placement');
+    assert.equal(mod.getValue(bottomPtr, 'double'), 120, 'image object bottom should match placement');
+    assert.equal(mod.getValue(rightPtr, 'double'), 120, 'image object right should match placement');
+    assert.equal(mod.getValue(topPtr, 'double'), 168, 'image object top should match placement');
+
+    const invalidObjectInfo = mod.ccall(
+      'wasm_pdf_get_page_object_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 99, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(invalidObjectInfo, 0, 'invalid page object index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid page object index should report invalid argument');
+
+    const deletedObject = mod.ccall(
+      'wasm_pdf_delete_page_object',
+      'number',
+      ['number', 'number', 'number'],
+      [handle, 0, 1]
+    );
+    assert.equal(deletedObject, 1, 'delete page object should succeed');
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 1, 'delete page object should remove one object');
+
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
     assert.notEqual(outPtrPtr, 0, 'out pointer malloc failed');
@@ -397,6 +447,7 @@ async function main() {
     );
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
+    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF should persist deleted object state');
     assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
     assert.equal(mod.ccall(
       'wasm_pdf_get_page_box',
@@ -516,6 +567,7 @@ async function main() {
     if (handle) mod.ccall('wasm_pdf_close', null, ['number'], [handle]);
     if (invalidTextPtr) mod._free(invalidTextPtr);
     if (imagePtr) mod._free(imagePtr);
+    if (typePtr) mod._free(typePtr);
     if (widthPtr) mod._free(widthPtr);
     if (heightPtr) mod._free(heightPtr);
     if (leftPtr) mod._free(leftPtr);

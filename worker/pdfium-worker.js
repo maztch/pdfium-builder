@@ -38,6 +38,9 @@ const ERROR_NAMES = Object.freeze({
   34: "set_image_matrix_failed",
   35: "create_render_bitmap_failed",
   36: "fill_render_bitmap_failed",
+  37: "page_object_lookup_failed",
+  38: "page_object_bounds_failed",
+  39: "page_object_delete_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -361,6 +364,132 @@ async function renderPageArea(payload = {}) {
   }
 }
 
+async function queryPageObjects(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let typePtr = 0;
+  let leftPtr = 0;
+  let bottomPtr = 0;
+  let rightPtr = 0;
+  let topPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    typePtr = mod._malloc(4);
+    leftPtr = mod._malloc(8);
+    bottomPtr = mod._malloc(8);
+    rightPtr = mod._malloc(8);
+    topPtr = mod._malloc(8);
+    if (!inputPtr || !typePtr || !leftPtr || !bottomPtr || !rightPtr || !topPtr) {
+      throw new PdfiumWorkerError("Unable to allocate page object query buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const pageIndex = numberOrDefault(payload.pageIndex, 0);
+    const count = mod.ccall("wasm_pdf_page_object_count", "number", ["number", "number"], [handle, pageIndex]);
+    if (count < 0) throwPdfiumError(mod, "Unable to count page objects");
+
+    const objects = [];
+    for (let index = 0; index < count; index += 1) {
+      const ok = mod.ccall(
+        "wasm_pdf_get_page_object_info",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number", "number"],
+        [handle, pageIndex, index, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+      );
+      if (!ok) throwPdfiumError(mod, "Unable to read page object info");
+
+      objects.push({
+        index,
+        type: mod.getValue(typePtr, "i32"),
+        left: mod.getValue(leftPtr, "double"),
+        bottom: mod.getValue(bottomPtr, "double"),
+        right: mod.getValue(rightPtr, "double"),
+        top: mod.getValue(topPtr, "double"),
+      });
+    }
+
+    return { objects };
+  } finally {
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (typePtr) mod._free(typePtr);
+    if (leftPtr) mod._free(leftPtr);
+    if (bottomPtr) mod._free(bottomPtr);
+    if (rightPtr) mod._free(rightPtr);
+    if (topPtr) mod._free(topPtr);
+  }
+}
+
+async function deletePageObject(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const deleted = mod.ccall(
+      "wasm_pdf_delete_page_object",
+      "number",
+      ["number", "number", "number"],
+      [handle, numberOrDefault(payload.pageIndex, 0), numberOrDefault(payload.objectIndex, -1)]
+    );
+    if (!deleted) throwPdfiumError(mod, "Unable to delete page object");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function handleRequest(message = {}) {
   if (message.type === "addText") {
     return addText(message.payload);
@@ -373,6 +502,12 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "renderPageArea") {
     return renderPageArea(message.payload);
+  }
+  if (message.type === "queryPageObjects") {
+    return queryPageObjects(message.payload);
+  }
+  if (message.type === "deletePageObject") {
+    return deletePageObject(message.payload);
   }
 
   throw new PdfiumWorkerError(`Unsupported worker message type: ${message.type}`, 2);
