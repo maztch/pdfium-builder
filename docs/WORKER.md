@@ -253,7 +253,7 @@ Use `queryOutline` to build a navigation tree from PDF bookmarks:
 }
 ```
 
-Use `queryAttachments`, `readAttachment`, and `addAttachment` for document-level embedded files:
+Use `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, and `deleteAttachment` for document-level embedded files:
 
 ```js
 {
@@ -275,6 +275,32 @@ Use `queryAttachments`, `readAttachment`, and `addAttachment` for document-level
     name: "source.txt",
     fileBytes: fileBytes.buffer,
     mimeType: "text/plain",
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-update-attachment",
+  type: "updateAttachment",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    attachmentIndex: 0,
+    fileBytes: replacementBytes.buffer,
+    mimeType: "application/octet-stream",
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-delete-attachment",
+  type: "deleteAttachment",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    attachmentIndex: 0,
     password: ""
   }
 }
@@ -531,7 +557,7 @@ Annotation update requests also return a saved PDF. Supported `updateType` value
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryDocument`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `updateAttachment`, `deleteAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

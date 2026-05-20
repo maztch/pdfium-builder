@@ -31,6 +31,7 @@ Status legend:
 | Metadata read | `wasm_pdf_get_metadata` | `queryDocument` | Yes | [API](API.md#metadata), [Worker Protocol](WORKER_PROTOCOL.md#querydocument) | Stable | Supports caller-selected metadata keys. |
 | Outline/bookmarks read | `wasm_pdf_get_outline` | `queryOutline` | Yes | [API](API.md#outline-and-bookmarks), [Worker Protocol](WORKER_PROTOCOL.md#queryoutline) | Stable | Returns a depth-first navigation tree with page destinations and URI/file actions. |
 | Embedded attachment list/read | `wasm_pdf_attachment_count`, `wasm_pdf_get_attachment_info`, `wasm_pdf_get_attachment_file` | `queryAttachments`, `readAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#queryattachments) | Stable | Supports document-level embedded files. |
+| Embedded attachment update/delete | `wasm_pdf_set_attachment_file`, `wasm_pdf_delete_attachment` | `updateAttachment`, `deleteAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#updateattachment) | Stable | Replaces attachment bytes/MIME type or removes an attachment entry. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Worker returns subtype, flags, rect, color, border, contents, URI, and quadpoints. |
@@ -48,6 +49,8 @@ Status legend:
 | Copy page between documents | `wasm_pdf_copy_page` | No | Yes | [API](API.md#pages) | Partial | Direct API requires two open handles. |
 | Import page ranges | `wasm_pdf_import_pages` | No | Yes | [API](API.md#pages) | Partial | Direct API supports PDFium one-based page ranges. |
 | Add embedded attachment | `wasm_pdf_add_attachment` | `addAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#addattachment) | Stable | Writes document-level embedded file bytes and optional MIME subtype. |
+| Update embedded attachment | `wasm_pdf_set_attachment_file` | `updateAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#updateattachment) | Stable | Replaces bytes and optional MIME subtype while keeping the attachment name. |
+| Delete embedded attachment | `wasm_pdf_delete_attachment` | `deleteAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#deleteattachment) | Stable | Removes the attachment from the embedded files name tree. |
 
 ## Content Editing
 
@@ -118,6 +121,8 @@ Status legend:
 | `queryAttachments` | Embedded attachment listing | Attachment metadata array | Stable | Read-only. |
 | `readAttachment` | Embedded attachment bytes | Attachment metadata plus file bytes | Stable | Read-only. |
 | `addAttachment` | Add embedded file | Saved PDF bytes | Stable | Writes document-level embedded files. |
+| `updateAttachment` | Replace embedded file bytes | Saved PDF bytes | Stable | Keeps attachment name and updates MIME type when provided. |
+| `deleteAttachment` | Delete embedded file entry | Saved PDF bytes | Stable | Uses zero-based attachment index. |
 | `deletePageObject` | Delete one page object | Saved PDF bytes | Stable | Regenerates page content. |
 | `transformPageObject` | Affine transform one page object | Saved PDF bytes | Stable | Matrix must be invertible. |
 | `mutatePages` | Insert/delete/copy/import pages | Saved PDF bytes | Planned | Needs protocol design for one vs two input PDFs. |

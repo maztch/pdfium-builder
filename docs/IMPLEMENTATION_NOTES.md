@@ -34,6 +34,8 @@ Attachment names and file bytes use PDFium's public attachment APIs.
 
 MIME type writes use the embedded file stream `/Subtype` entry through PDFium internals because the public attachment API exposes MIME reads but no MIME setter. Attachment APIs cover document-level embedded files, not file-attachment annotations.
 
+Replacing file bytes uses PDFium's attachment file setter, which updates the embedded file stream and preserves the name-tree entry. Deletion uses PDFium's attachment delete API, which removes the embedded file entry from the name tree.
+
 ## JPEG Insertion
 
 JPEG insertion uses PDFium's public `FPDFImageObj_LoadJpegFileInline()` API.

@@ -34,7 +34,7 @@ Most mutation/query APIs return scalar values and do not allocate caller-owned o
 - Page count, page size, page rotation, page boxes, permissions.
 - Attachment count.
 - Page insert/delete/copy/import.
-- Text/image/attachment insertion.
+- Text/image insertion and attachment add/update/delete.
 - Annotation creation/update/delete and annotation count.
 - Page object count/info/delete/transform.
 

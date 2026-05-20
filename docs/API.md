@@ -105,6 +105,8 @@ Destination view modes:
 
 - `wasm_pdf_attachment_count(handle)` returns the number of document-level embedded files, or `-1` on failure.
 - `wasm_pdf_add_attachment(handle, name, filePtr, fileSize, mimeType)` adds an embedded file. `name` must be valid UTF-8 and non-empty. `filePtr` may be null only when `fileSize` is `0`. `mimeType` is optional but must be 7-bit ASCII when present.
+- `wasm_pdf_set_attachment_file(handle, attachmentIndex, filePtr, fileSize, mimeType)` replaces an embedded file's bytes and MIME type. `filePtr` may be null only when `fileSize` is `0`; `mimeType` is optional but must be 7-bit ASCII when present.
+- `wasm_pdf_delete_attachment(handle, attachmentIndex)` removes an embedded file entry by zero-based attachment index.
 - `wasm_pdf_get_attachment_info(handle, attachmentIndex, outPtrPtr, outSizePtr)` writes a binary attachment info buffer. Release non-null output with `wasm_pdf_free_buffer`.
 - `wasm_pdf_get_attachment_file(handle, attachmentIndex, outPtrPtr, outSizePtr)` writes attachment bytes. Release non-null output with `wasm_pdf_free_buffer`; empty files can return a null pointer with size `0`.
 
@@ -282,3 +284,4 @@ Common render flag:
 - `55`: attachment write failed
 - `56`: annotation read failed
 - `57`: annotation delete failed
+- `58`: attachment delete failed

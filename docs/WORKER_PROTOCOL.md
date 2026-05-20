@@ -297,6 +297,28 @@ Returns `{ attachment }`, where `attachment.fileBytes` is an `ArrayBuffer`.
 
 Returns `{ pdfBytes }`.
 
+## `updateAttachment`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `attachmentIndex` | number | Yes | `-1` | Zero-based attachment index. |
+| `fileBytes` | `ArrayBuffer` or typed array | Yes | | Replacement embedded file bytes. |
+| `mimeType` | string | No | `""` | Optional replacement MIME type. Must be 7-bit ASCII when present. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
+## `deleteAttachment`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `attachmentIndex` | number | Yes | `-1` | Zero-based attachment index. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
 ## `deletePageObject`
 
 | Field | Type | Required | Default | Notes |

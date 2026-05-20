@@ -285,6 +285,28 @@ const { attachment } = await requestPdfWorker(
 );
 
 const text = new TextDecoder().decode(attachment.fileBytes);
+
+const replacementBytes = new TextEncoder().encode("replacement source data");
+const updated = await requestPdfWorker(
+  worker,
+  "updateAttachment",
+  {
+    pdfBytes: new Uint8Array(attached.pdfBytes).slice().buffer,
+    attachmentIndex: attachments[0].index,
+    fileBytes: replacementBytes.buffer,
+    mimeType: "text/plain",
+  },
+  [replacementBytes.buffer]
+);
+
+const deleted = await requestPdfWorker(
+  worker,
+  "deleteAttachment",
+  {
+    pdfBytes: new Uint8Array(updated.pdfBytes).slice().buffer,
+    attachmentIndex: attachments[0].index,
+  }
+);
 ```
 
 Attachment APIs operate on document-level embedded files. They are separate from file-attachment annotations.

@@ -97,6 +97,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED = 55,
   WASM_PDF_ERROR_ANNOTATION_READ_FAILED = 56,
   WASM_PDF_ERROR_ANNOTATION_DELETE_FAILED = 57,
+  WASM_PDF_ERROR_ATTACHMENT_DELETE_FAILED = 58,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -1481,6 +1482,83 @@ int wasm_pdf_add_attachment(uintptr_t handle,
 
   if (!SetAttachmentSubtype(attachment, mime_type)) {
     SetLastError(WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_attachment_file(uintptr_t handle,
+                                 int attachment_index,
+                                 const uint8_t* file_data,
+                                 uint32_t file_size,
+                                 const char* mime_type) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (attachment_index < 0 || (!file_data && file_size > 0)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_ATTACHMENT attachment = FPDFDoc_GetAttachment(doc, attachment_index);
+  if (!attachment) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!FPDFAttachment_SetFile(attachment, doc, file_data, file_size)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED);
+    return 0;
+  }
+
+  if (!SetAttachmentSubtype(attachment, mime_type)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_delete_attachment(uintptr_t handle, int attachment_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (attachment_index < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  const int attachment_count_before = FPDFDoc_GetAttachmentCount(doc);
+  if (attachment_count_before < 0 || attachment_index >= attachment_count_before) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!FPDFDoc_DeleteAttachment(doc, attachment_index)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_DELETE_FAILED);
+    return 0;
+  }
+
+  const int attachment_count_after = FPDFDoc_GetAttachmentCount(doc);
+  if (attachment_count_after != attachment_count_before - 1) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_DELETE_FAILED);
     return 0;
   }
 

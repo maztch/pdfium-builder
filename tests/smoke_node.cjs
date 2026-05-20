@@ -215,6 +215,8 @@ async function main() {
   let outlinePtrPtr = 0;
   let outlineSizePtr = 0;
   let attachmentDataPtr = 0;
+  let updatedAttachmentDataPtr = 0;
+  let secondAttachmentDataPtr = 0;
   let attachmentInfoPtr = 0;
   let attachmentInfoPtrPtr = 0;
   let attachmentInfoSizePtr = 0;
@@ -536,6 +538,95 @@ async function main() {
     );
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
     attachmentFilePtr = 0;
+
+    const updatedAttachmentBytes = Buffer.from('updated embedded attachment bytes', 'utf8');
+    updatedAttachmentDataPtr = mod._malloc(updatedAttachmentBytes.length);
+    assert.notEqual(updatedAttachmentDataPtr, 0, 'updated attachment data malloc failed');
+    mod.HEAPU8.set(updatedAttachmentBytes, updatedAttachmentDataPtr);
+
+    const updatedAttachment = mod.ccall(
+      'wasm_pdf_set_attachment_file',
+      'number',
+      ['number', 'number', 'number', 'number', 'string'],
+      [handle, 0, updatedAttachmentDataPtr, updatedAttachmentBytes.length, 'application/octet-stream']
+    );
+    assert.equal(updatedAttachment, 1, 'update attachment file should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'update attachment should clear last error');
+
+    const gotUpdatedAttachmentInfo = mod.ccall(
+      'wasm_pdf_get_attachment_info',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, attachmentInfoPtrPtr, attachmentInfoSizePtr]
+    );
+    assert.equal(gotUpdatedAttachmentInfo, 1, 'updated attachment info should be readable');
+    attachmentInfoPtr = mod.getValue(attachmentInfoPtrPtr, 'i32');
+    const updatedAttachmentInfoSize = mod.getValue(attachmentInfoSizePtr, 'i32');
+    const updatedAttachmentInfo = parseAttachmentInfo(mod.HEAPU8.slice(attachmentInfoPtr, attachmentInfoPtr + updatedAttachmentInfoSize), 0);
+    assert.equal(updatedAttachmentInfo.name, 'notes-✓.txt', 'attachment name should persist after file update');
+    assert.equal(updatedAttachmentInfo.mimeType, 'application/octet-stream', 'updated attachment MIME type should be readable');
+    assert.equal(updatedAttachmentInfo.fileSize, updatedAttachmentBytes.length, 'updated attachment file size should match');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentInfoPtr]);
+    attachmentInfoPtr = 0;
+
+    const gotUpdatedAttachmentFile = mod.ccall(
+      'wasm_pdf_get_attachment_file',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, attachmentFilePtrPtr, attachmentFileSizePtr]
+    );
+    assert.equal(gotUpdatedAttachmentFile, 1, 'updated attachment file should be readable');
+    attachmentFilePtr = mod.getValue(attachmentFilePtrPtr, 'i32');
+    const updatedAttachmentFileSize = mod.getValue(attachmentFileSizePtr, 'i32');
+    assert.equal(updatedAttachmentFileSize, updatedAttachmentBytes.length, 'updated attachment file output size should match');
+    assert.equal(
+      Buffer.from(mod.HEAPU8.subarray(attachmentFilePtr, attachmentFilePtr + updatedAttachmentFileSize)).toString('utf8'),
+      'updated embedded attachment bytes',
+      'updated attachment bytes should round-trip'
+    );
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
+    attachmentFilePtr = 0;
+
+    const invalidAttachmentUpdate = mod.ccall(
+      'wasm_pdf_set_attachment_file',
+      'number',
+      ['number', 'number', 'number', 'number', 'string'],
+      [handle, 9, updatedAttachmentDataPtr, updatedAttachmentBytes.length, 'application/octet-stream']
+    );
+    assert.equal(invalidAttachmentUpdate, 0, 'invalid attachment update index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid attachment update index should report invalid argument');
+
+    const secondAttachmentBytes = Buffer.from('temporary attachment', 'utf8');
+    secondAttachmentDataPtr = mod._malloc(secondAttachmentBytes.length);
+    assert.notEqual(secondAttachmentDataPtr, 0, 'second attachment data malloc failed');
+    mod.HEAPU8.set(secondAttachmentBytes, secondAttachmentDataPtr);
+
+    const addedSecondAttachment = mod.ccall(
+      'wasm_pdf_add_attachment',
+      'number',
+      ['number', 'string', 'number', 'number', 'string'],
+      [handle, 'remove-me.txt', secondAttachmentDataPtr, secondAttachmentBytes.length, 'text/plain']
+    );
+    assert.equal(addedSecondAttachment, 1, 'second attachment should be addable');
+    assert.equal(mod.ccall('wasm_pdf_attachment_count', 'number', ['number'], [handle]), 2, 'attachment count should include second attachment');
+
+    const deletedAttachment = mod.ccall(
+      'wasm_pdf_delete_attachment',
+      'number',
+      ['number', 'number'],
+      [handle, 1]
+    );
+    assert.equal(deletedAttachment, 1, 'delete attachment should succeed');
+    assert.equal(mod.ccall('wasm_pdf_attachment_count', 'number', ['number'], [handle]), 1, 'delete attachment should remove one attachment');
+
+    const invalidAttachmentDelete = mod.ccall(
+      'wasm_pdf_delete_attachment',
+      'number',
+      ['number', 'number'],
+      [handle, 9]
+    );
+    assert.equal(invalidAttachmentDelete, 0, 'invalid attachment delete index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid attachment delete index should report invalid argument');
 
     const invalidAttachmentRead = mod.ccall(
       'wasm_pdf_get_attachment_info',
@@ -1247,11 +1338,11 @@ async function main() {
     ), 1, 'saved PDF attachment file should be readable');
     attachmentFilePtr = mod.getValue(attachmentFilePtrPtr, 'i32');
     const savedAttachmentFileSize = mod.getValue(attachmentFileSizePtr, 'i32');
-    assert.equal(savedAttachmentFileSize, attachmentBytes.length, 'saved attachment file size should match');
+    assert.equal(savedAttachmentFileSize, updatedAttachmentBytes.length, 'saved attachment file size should match updated bytes');
     assert.equal(
       Buffer.from(mod.HEAPU8.subarray(attachmentFilePtr, attachmentFilePtr + savedAttachmentFileSize)).toString('utf8'),
-      'hello embedded attachment',
-      'saved attachment bytes should persist'
+      'updated embedded attachment bytes',
+      'saved updated attachment bytes should persist'
     );
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
     attachmentFilePtr = 0;
@@ -1275,6 +1366,8 @@ async function main() {
     if (jpegPtr) mod._free(jpegPtr);
     if (pngPtr) mod._free(pngPtr);
     if (attachmentDataPtr) mod._free(attachmentDataPtr);
+    if (updatedAttachmentDataPtr) mod._free(updatedAttachmentDataPtr);
+    if (secondAttachmentDataPtr) mod._free(secondAttachmentDataPtr);
     if (typePtr) mod._free(typePtr);
     if (widthPtr) mod._free(widthPtr);
     if (heightPtr) mod._free(heightPtr);
