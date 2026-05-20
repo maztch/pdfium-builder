@@ -38,6 +38,32 @@ Create the worker:
 const worker = new Worker(new URL("../worker/pdfium-worker.js", import.meta.url), { type: "module" });
 ```
 
+## Direct Wrapper
+
+Use `pdfium-api.js` when you want direct calls without writing raw `_malloc`, `ccall`, and output-buffer cleanup code:
+
+```js
+import { createPdfiumApi } from "../pdfium-api.js";
+
+const pdfium = await createPdfiumApi();
+try {
+  const outputBytes = await pdfium.withDocument(inputBytes, (doc) => {
+    doc.addText({
+      pageIndex: 0,
+      text: "Approved",
+      x: 72,
+      y: 720,
+      fontSize: 18,
+      rgba: 0xff003366,
+    });
+
+    return doc.save();
+  });
+} finally {
+  pdfium.destroy();
+}
+```
+
 ## Query Document Summary
 
 ```js

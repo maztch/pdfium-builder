@@ -2,7 +2,61 @@
 
 This guide covers direct use of the generated ES module. For background processing, use the [Worker Guide](WORKER.md).
 
+## Preferred direct API
+
+Use `pdfium-api.js` for direct main-thread or Node usage. It wraps the raw Emscripten module, opens/closes document handles, copies output buffers, frees native pointers, and maps `wasm_pdf_last_error()` into `PdfiumApiError`.
+
+```js
+import { createPdfiumApi } from "../pdfium-api.js";
+
+const pdfium = await createPdfiumApi({
+  locateFile(file) {
+    return new URL(`../dist/${file}`, import.meta.url).href;
+  },
+});
+
+try {
+  const outputBytes = await pdfium.withDocument(inputBytes, (doc) => {
+    console.log(doc.pageCount());
+    console.log(doc.pageSize(0));
+
+    doc.addText({
+      pageIndex: 0,
+      text: "Hello PDF",
+      x: 72,
+      y: 720,
+      fontSize: 18,
+      rgba: 0xff003366,
+    });
+
+    return doc.save();
+  });
+
+  const blob = new Blob([outputBytes], { type: "application/pdf" });
+  console.log(blob);
+} finally {
+  pdfium.destroy();
+}
+```
+
+`withDocument()` is the safest path for one-document flows. If you need to keep a document open across multiple calls, use `openDocument()` and close it explicitly:
+
+```js
+const doc = pdfium.openDocument(inputBytes);
+try {
+  doc.setPageRotation(0, 1);
+  doc.setPageBox(0, 1, { left: 10, bottom: 20, right: 400, top: 500 });
+  const outputBytes = doc.save();
+} finally {
+  doc.close();
+}
+```
+
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, page text extraction, text search, text insertion, page insert/delete, page rotation/boxes/size, and page rendering.
+
 ## Load the module
+
+Use this raw module path only when you need an exported `wasm_pdf_*` function that `pdfium-api.js` does not wrap yet.
 
 ```js
 import PdfiumWasm from "../dist/pdfium.js";

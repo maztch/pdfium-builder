@@ -246,11 +246,49 @@ function parseAnnotationInfo(bytes, index) {
 
 async function main() {
   const { default: PdfiumWasm } = await import(pathToFileURL(path.join(distDir, 'pdfium.js')));
+  const { createPdfiumApi, PdfiumApiError } = await import(pathToFileURL(path.join(__dirname, '..', 'pdfium-api.js')));
   const mod = await PdfiumWasm({
     locateFile(file) {
       return path.join(distDir, file);
     },
   });
+
+  const directApi = await createPdfiumApi({
+    locateFile(file) {
+      return path.join(distDir, file);
+    },
+  });
+  try {
+    const directOutput = await directApi.withDocument(createMinimalPdf(), (doc) => {
+      assert.equal(doc.pageCount(), 1, 'direct API page count should be readable');
+      assert.deepEqual(doc.pageSize(0), { width: 612, height: 792 }, 'direct API page size should be readable');
+      doc.setPageSize(0, 320, 460);
+      doc.setPageRotation(0, 1);
+      doc.setPageBox(0, 1, { left: 10, bottom: 20, right: 300, top: 440 });
+      doc.insertBlankPage({ pageIndex: 1, width: 120, height: 140 });
+      assert.equal(doc.pageCount(), 2, 'direct API insertBlankPage should add a page');
+      doc.deletePage(1);
+      assert.equal(doc.pageCount(), 1, 'direct API deletePage should remove a page');
+      doc.setMetadata('Title', 'Direct wrapper title');
+      assert.equal(doc.metadata('Title'), 'Direct wrapper title', 'direct API metadata should round-trip');
+      doc.addText({ pageIndex: 0, text: 'Direct wrapper text', x: 72, y: 120, fontSize: 12, rgba: 0xff111111 });
+      assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
+      const matches = doc.searchPageText(0, 'Direct wrapper', 0);
+      assert.equal(matches.length, 1, 'direct API search should return one match');
+      const preview = doc.renderPage({ pageIndex: 0, width: 16, height: 16, flags: 0 });
+      assert.equal(preview.rgbaBytes.length, 16 * 16 * 4, 'direct API render should return RGBA bytes');
+      return doc.save();
+    });
+    assert.equal(Buffer.from(directOutput.subarray(0, 5)).toString('ascii'), '%PDF-', 'direct API save should return PDF bytes');
+
+    await assert.rejects(
+      directApi.withDocument(createMinimalPdf(), (doc) => doc.deletePage(9)),
+      (error) => error instanceof PdfiumApiError && error.code === 2,
+      'direct API errors should expose structured PDFium error codes'
+    );
+  } finally {
+    directApi.destroy();
+  }
 
   const inputBytes = createMinimalPdf();
   let initialized = false;

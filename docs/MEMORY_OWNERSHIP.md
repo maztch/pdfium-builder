@@ -4,6 +4,8 @@ This document defines who owns native handles, native pointers, and JS buffers.
 
 ## Direct WASM Rules
 
+Prefer `pdfium-api.js` for direct JS usage. It applies these rules internally for the methods it wraps. Use the raw rules below when calling `wasm_pdf_*` exports directly.
+
 | Resource | Created by | Released by | Notes |
 |---|---|---|---|
 | Input buffer pointer | JS via `_malloc` | JS via `_free` | Copy PDF/image bytes into `HEAPU8` before calling native APIs. |

@@ -18,6 +18,7 @@ Status legend:
 | Free output buffers | `wasm_pdf_free_buffer` | Indirect | Yes | [Usage](USAGE.md#memory-ownership-rules), [Internals](INTERNALS.md#output-buffers) | Stable | Required for every non-null wrapper output buffer. |
 | Close document handle | `wasm_pdf_close` | Indirect | Yes | [Usage](USAGE.md#memory-ownership-rules) | Stable | Required for every opened document handle. |
 | Structured errors | `wasm_pdf_last_error` | Yes | Yes | [API](API.md#error-codes), [Internals](INTERNALS.md#error-model) | Stable | Worker maps numeric errors to names. |
+| Direct JS wrapper | `pdfium-api.js` | N/A | Yes | [Usage](USAGE.md#preferred-direct-api) | Stable | Wraps common direct operations without manual pointer or handle cleanup. |
 
 ## Document And Page Queries
 

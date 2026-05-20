@@ -1,5 +1,10 @@
 {
   "type": "module",
+  "exports": {
+    ".": "./pdfium-api.js",
+    "./worker": "./worker/pdfium-worker.js",
+    "./raw": "./dist/pdfium.js"
+  },
   "scripts": {
     "smoke": "node tests/smoke_node.cjs"
   }
