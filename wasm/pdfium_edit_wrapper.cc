@@ -13,16 +13,20 @@
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
+#include "core/fpdfdoc/cpdf_filespec.h"
 #include "core/fpdfdoc/cpdf_generateap.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/widestring.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/fpdf_annot.h"
+#include "public/fpdf_attachment.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdf_ppo.h"
@@ -88,6 +92,9 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_LOAD_JPEG_FAILED = 50,
   WASM_PDF_ERROR_DECODE_PNG_FAILED = 51,
   WASM_PDF_ERROR_OUTLINE_READ_FAILED = 52,
+  WASM_PDF_ERROR_ADD_ATTACHMENT_FAILED = 53,
+  WASM_PDF_ERROR_ATTACHMENT_READ_FAILED = 54,
+  WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED = 55,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -287,6 +294,100 @@ bool GetBookmarkTitleUtf8(FPDF_BOOKMARK bookmark, std::vector<uint8_t>* title) {
   const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
   const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
   title->assign(utf8_data, utf8_data + utf8.GetLength());
+  return true;
+}
+
+bool Utf16LeToUtf8Bytes(std::vector<uint8_t> utf16le, std::vector<uint8_t>* utf8_output) {
+  if (!utf8_output) return false;
+
+  if (utf16le.size() >= 2 && utf16le[utf16le.size() - 1] == 0 &&
+      utf16le[utf16le.size() - 2] == 0) {
+    utf16le.resize(utf16le.size() - 2);
+  }
+
+  const WideString wide = WideString::FromUTF16LE(utf16le);
+  const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
+  const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
+  utf8_output->assign(utf8_data, utf8_data + utf8.GetLength());
+  return true;
+}
+
+bool GetAttachmentNameUtf8(FPDF_ATTACHMENT attachment, std::vector<uint8_t>* name) {
+  if (!attachment || !name) return false;
+
+  const unsigned long required_size = FPDFAttachment_GetName(attachment, nullptr, 0);
+  if (required_size == 0) return false;
+
+  std::vector<uint8_t> utf16le(required_size);
+  const unsigned long written_size =
+      FPDFAttachment_GetName(
+          attachment,
+          reinterpret_cast<FPDF_WCHAR*>(utf16le.data()),
+          required_size);
+  if (written_size != required_size) return false;
+
+  return Utf16LeToUtf8Bytes(std::move(utf16le), name);
+}
+
+bool GetAttachmentSubtypeUtf8(FPDF_ATTACHMENT attachment, std::vector<uint8_t>* subtype) {
+  if (!attachment || !subtype) return false;
+
+  const unsigned long required_size = FPDFAttachment_GetSubtype(attachment, nullptr, 0);
+  if (required_size == 0) return false;
+
+  std::vector<uint8_t> utf16le(required_size);
+  const unsigned long written_size =
+      FPDFAttachment_GetSubtype(
+          attachment,
+          reinterpret_cast<FPDF_WCHAR*>(utf16le.data()),
+          required_size);
+  if (written_size != required_size) return false;
+
+  return Utf16LeToUtf8Bytes(std::move(utf16le), subtype);
+}
+
+bool GetAttachmentFileSize(FPDF_ATTACHMENT attachment, int32_t* file_size) {
+  if (!attachment || !file_size) return false;
+
+  unsigned long required_size = 0;
+  if (!FPDFAttachment_GetFile(attachment, nullptr, 0, &required_size)) {
+    *file_size = -1;
+    return true;
+  }
+  if (required_size > static_cast<unsigned long>(std::numeric_limits<int32_t>::max())) {
+    return false;
+  }
+
+  *file_size = static_cast<int32_t>(required_size);
+  return true;
+}
+
+bool IsNonEmptyAsciiCString(const char* value) {
+  if (!value || !value[0]) return false;
+  for (const auto* cursor = reinterpret_cast<const unsigned char*>(value); *cursor; ++cursor) {
+    if (*cursor > 0x7F) return false;
+  }
+  return true;
+}
+
+bool SetAttachmentSubtype(FPDF_ATTACHMENT attachment, const char* mime_type) {
+  if (!mime_type || !mime_type[0]) return true;
+  if (!IsNonEmptyAsciiCString(mime_type)) return false;
+
+  CPDF_Object* file = CPDFObjectFromFPDFAttachment(attachment);
+  if (!file || !file->IsDictionary()) return false;
+
+  RetainPtr<CPDF_Dictionary> ef_dict =
+      file->AsMutableDictionary()->GetMutableDictFor("EF");
+  if (!ef_dict) return false;
+
+  RetainPtr<CPDF_Stream> file_stream = ef_dict->GetMutableStreamFor("F");
+  if (!file_stream) return false;
+
+  RetainPtr<CPDF_Dictionary> stream_dict = file_stream->GetMutableDict();
+  if (!stream_dict) return false;
+
+  stream_dict->SetNewFor<CPDF_Name>("Subtype", mime_type);
   return true;
 }
 
@@ -1272,6 +1373,189 @@ int wasm_pdf_get_outline(uintptr_t handle, uint8_t** out_ptr, uint32_t* out_size
   result[3] = static_cast<uint8_t>((item_count >> 24) & 0xFF);
 
   if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_attachment_count(uintptr_t handle) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  const int attachment_count = FPDFDoc_GetAttachmentCount(doc);
+  if (attachment_count < 0) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_READ_FAILED);
+    return -1;
+  }
+
+  ClearLastError();
+  return attachment_count;
+}
+
+int wasm_pdf_add_attachment(uintptr_t handle,
+                            const char* name_utf8,
+                            const uint8_t* file_data,
+                            uint32_t file_size,
+                            const char* mime_type) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!name_utf8 || !name_utf8[0] || (!file_data && file_size > 0)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  std::u16string name_utf16;
+  if (!DecodeUtf8ToUtf16(name_utf8, &name_utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  FPDF_ATTACHMENT attachment =
+      FPDFDoc_AddAttachment(doc, reinterpret_cast<const unsigned short*>(name_utf16.c_str()));
+  if (!attachment) {
+    SetLastError(WASM_PDF_ERROR_ADD_ATTACHMENT_FAILED);
+    return 0;
+  }
+
+  if (!FPDFAttachment_SetFile(attachment, doc, file_data, file_size)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED);
+    return 0;
+  }
+
+  if (!SetAttachmentSubtype(attachment, mime_type)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_WRITE_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_attachment_info(uintptr_t handle,
+                                 int attachment_index,
+                                 uint8_t** out_ptr,
+                                 uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (attachment_index < 0 || !out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_ATTACHMENT attachment = FPDFDoc_GetAttachment(doc, attachment_index);
+  if (!attachment) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  std::vector<uint8_t> name;
+  std::vector<uint8_t> subtype;
+  int32_t file_size = -1;
+  if (!GetAttachmentNameUtf8(attachment, &name) ||
+      !GetAttachmentSubtypeUtf8(attachment, &subtype) ||
+      !GetAttachmentFileSize(attachment, &file_size)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_READ_FAILED);
+    return 0;
+  }
+
+  std::vector<uint8_t> result;
+  AppendBytes(&result, name.data(), static_cast<uint32_t>(name.size()));
+  AppendBytes(&result, subtype.data(), static_cast<uint32_t>(subtype.size()));
+  AppendInt32(&result, file_size);
+
+  if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_attachment_file(uintptr_t handle,
+                                 int attachment_index,
+                                 uint8_t** out_ptr,
+                                 uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (attachment_index < 0 || !out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_ATTACHMENT attachment = FPDFDoc_GetAttachment(doc, attachment_index);
+  if (!attachment) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  unsigned long required_size = 0;
+  if (!FPDFAttachment_GetFile(attachment, nullptr, 0, &required_size)) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_READ_FAILED);
+    return 0;
+  }
+  if (required_size > std::numeric_limits<uint32_t>::max()) {
+    SetLastError(WASM_PDF_ERROR_OUTPUT_TOO_LARGE);
+    return 0;
+  }
+
+  if (required_size == 0) {
+    if (!CopyBytesToMalloc(nullptr, 0, out_ptr, out_size)) {
+      return 0;
+    }
+    ClearLastError();
+    return 1;
+  }
+
+  std::vector<uint8_t> file_bytes(required_size);
+  unsigned long actual_size = 0;
+  if (!FPDFAttachment_GetFile(
+          attachment, file_bytes.data(), required_size, &actual_size) ||
+      actual_size != required_size) {
+    SetLastError(WASM_PDF_ERROR_ATTACHMENT_READ_FAILED);
+    return 0;
+  }
+
+  if (!CopyBytesToMalloc(file_bytes.data(), file_bytes.size(), out_ptr, out_size)) {
     return 0;
   }
 

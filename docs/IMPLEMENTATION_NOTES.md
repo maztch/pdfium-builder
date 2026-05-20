@@ -28,6 +28,12 @@ The wrapper:
 
 If appearance generation fails, callers receive error code `49`.
 
+## Embedded Attachments
+
+Attachment names and file bytes use PDFium's public attachment APIs.
+
+MIME type writes use the embedded file stream `/Subtype` entry through PDFium internals because the public attachment API exposes MIME reads but no MIME setter. Attachment APIs cover document-level embedded files, not file-attachment annotations.
+
 ## JPEG Insertion
 
 JPEG insertion uses PDFium's public `FPDFImageObj_LoadJpegFileInline()` API.

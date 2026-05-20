@@ -101,6 +101,21 @@ Destination view modes:
 - `7`: FitBH
 - `8`: FitBV
 
+## Embedded attachments
+
+- `wasm_pdf_attachment_count(handle)` returns the number of document-level embedded files, or `-1` on failure.
+- `wasm_pdf_add_attachment(handle, name, filePtr, fileSize, mimeType)` adds an embedded file. `name` must be valid UTF-8 and non-empty. `filePtr` may be null only when `fileSize` is `0`. `mimeType` is optional but must be 7-bit ASCII when present.
+- `wasm_pdf_get_attachment_info(handle, attachmentIndex, outPtrPtr, outSizePtr)` writes a binary attachment info buffer. Release non-null output with `wasm_pdf_free_buffer`.
+- `wasm_pdf_get_attachment_file(handle, attachmentIndex, outPtrPtr, outSizePtr)` writes attachment bytes. Release non-null output with `wasm_pdf_free_buffer`; empty files can return a null pointer with size `0`.
+
+Attachment info buffer layout:
+
+- `uint32 nameSize`, followed by UTF-8 file name bytes
+- `uint32 mimeTypeSize`, followed by UTF-8 MIME type bytes, or size `0` when absent
+- `int32 fileSize`, or `-1` when file bytes are not readable
+
+This API covers document-level embedded files, not file-attachment annotations.
+
 ## Text extraction and search
 
 - `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` writes extracted page text as UTF-8 bytes. Release with `wasm_pdf_free_buffer`.
@@ -247,3 +262,6 @@ Common render flag:
 - `50`: load JPEG failed
 - `51`: decode PNG failed
 - `52`: outline read failed
+- `53`: add attachment failed
+- `54`: attachment read failed
+- `55`: attachment write failed

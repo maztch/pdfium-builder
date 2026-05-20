@@ -73,6 +73,7 @@ Current examples of internal use:
 - Metadata writing uses the document `/Info` dictionary because PDFium public APIs are read-only for metadata.
 - FreeText annotation appearance generation uses PDFium annotation appearance internals so the text box is visible after creation.
 - PNG insertion uses a small wrapper-side PNG parser plus PDFium's zlib build output because PDFium only exposes public encoded-image insertion for JPEG.
+- Attachment MIME writing uses the embedded file stream dictionary because PDFium exposes public MIME reads but not public MIME writes.
 
 When using internals, document why in the wrapper or related docs, and cover the behavior in smoke tests.
 

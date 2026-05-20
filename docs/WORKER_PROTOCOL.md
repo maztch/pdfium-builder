@@ -182,6 +182,43 @@ Returns `{ outline }`, where `outline` is a nested bookmark tree:
 
 `destination` is `null` when the bookmark has no local destination. URI bookmarks set `uri`; launch or remote-goto bookmarks can set `filePath`.
 
+## `queryAttachments`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ attachments }`, where each attachment has:
+
+```js
+{ index, name, mimeType, fileSize }
+```
+
+`mimeType` is `null` when absent. `fileSize` is `-1` when file bytes are not readable.
+
+## `readAttachment`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `attachmentIndex` | number | Yes | `-1` | Zero-based attachment index. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ attachment }`, where `attachment.fileBytes` is an `ArrayBuffer`.
+
+## `addAttachment`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `name` | string | Yes | `""` | Embedded file name. Must be non-empty valid UTF-8. |
+| `fileBytes` | `ArrayBuffer` or typed array | Yes | | Embedded file bytes. |
+| `mimeType` | string | No | `""` | Optional MIME type. Must be 7-bit ASCII when present. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ pdfBytes }`.
+
 ## `deletePageObject`
 
 | Field | Type | Required | Default | Notes |

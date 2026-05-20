@@ -8,7 +8,7 @@ This document defines who owns native handles, native pointers, and JS buffers.
 |---|---|---|---|
 | Input buffer pointer | JS via `_malloc` | JS via `_free` | Copy PDF/image bytes into `HEAPU8` before calling native APIs. |
 | Document handle | `wasm_pdf_open_from_bytes` | `wasm_pdf_close` | Always close in `finally`. |
-| Output buffer pointer | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Applies to save, metadata, outline, text, search, and render outputs. |
+| Output buffer pointer | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Applies to save, metadata, outline, attachment, text, search, and render outputs. |
 | Pointer-to-pointer slots | JS via `_malloc(4)` | JS via `_free` | Used for output pointer and output size. |
 | Render output bytes | Wrapper via `malloc` | `wasm_pdf_free_buffer` | Copy with `HEAPU8.slice` if data must survive memory growth/free. |
 
@@ -19,6 +19,8 @@ This document defines who owns native handles, native pointers, and JS buffers.
 | `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)` | PDF bytes | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_metadata(handle, key, outPtrPtr, outSizePtr)` | UTF-8 bytes | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_outline(handle, outPtrPtr, outSizePtr)` | Binary outline result buffer | `wasm_pdf_free_buffer(outPtr)` |
+| `wasm_pdf_get_attachment_info(handle, attachmentIndex, outPtrPtr, outSizePtr)` | Binary attachment info buffer | `wasm_pdf_free_buffer(outPtr)` |
+| `wasm_pdf_get_attachment_file(handle, attachmentIndex, outPtrPtr, outSizePtr)` | Attachment file bytes | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_get_page_text(handle, pageIndex, outPtrPtr, outSizePtr)` | UTF-8 bytes | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_search_page_text(handle, pageIndex, query, flags, outPtrPtr, outSizePtr)` | Binary search result buffer | `wasm_pdf_free_buffer(outPtr)` |
 | `wasm_pdf_render_page_rgba(handle, pageIndex, width, height, flags, outPtrPtr, outSizePtr)` | RGBA bytes | `wasm_pdf_free_buffer(outPtr)` |
@@ -29,8 +31,9 @@ This document defines who owns native handles, native pointers, and JS buffers.
 Most mutation/query APIs return scalar values and do not allocate caller-owned output buffers:
 
 - Page count, page size, page rotation, page boxes, permissions.
+- Attachment count.
 - Page insert/delete/copy/import.
-- Text/image insertion.
+- Text/image/attachment insertion.
 - Annotation creation/update.
 - Page object count/info/delete/transform.
 
@@ -80,7 +83,7 @@ try {
 
 ## Common Mistakes
 
-- Forgetting to call `wasm_pdf_free_buffer` for save/render/outline/text/search outputs.
+- Forgetting to call `wasm_pdf_free_buffer` for save/render/outline/attachment/text/search outputs.
 - Forgetting to close document handles after errors.
 - Keeping a `HEAPU8.subarray` view after freeing or after memory growth.
 - Transferring an `ArrayBuffer` to a worker and then trying to reuse it.

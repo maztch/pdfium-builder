@@ -55,8 +55,8 @@ Required tools:
 ## Current capability summary
 
 - Open PDF bytes, save copies, and close handles.
-- Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, annotations, page objects, text, and text search rectangles.
-- Mutate page rotation, page boxes, page size, metadata, pages, page objects, annotations, text, and RGBA/JPEG/PNG images.
+- Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, embedded attachments, annotations, page objects, text, and text search rectangles.
+- Mutate page rotation, page boxes, page size, metadata, embedded attachments, pages, page objects, annotations, text, and RGBA/JPEG/PNG images.
 - Render full pages or PDF-space page areas to RGBA buffers.
 - Run heavy PDF work in a module worker with balanced cleanup.
 

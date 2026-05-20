@@ -30,6 +30,7 @@ Status legend:
 | Permissions query | `wasm_pdf_get_permissions` | No | Yes | [API](API.md#page-queries-and-geometry) | Partial | Native read path is stable. |
 | Metadata read | `wasm_pdf_get_metadata` | No | Yes | [API](API.md#metadata) | Partial | Candidate for worker query support. |
 | Outline/bookmarks read | `wasm_pdf_get_outline` | `queryOutline` | Yes | [API](API.md#outline-and-bookmarks), [Worker Protocol](WORKER_PROTOCOL.md#queryoutline) | Stable | Returns a depth-first navigation tree with page destinations and URI/file actions. |
+| Embedded attachment list/read | `wasm_pdf_attachment_count`, `wasm_pdf_get_attachment_info`, `wasm_pdf_get_attachment_file` | `queryAttachments`, `readAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#queryattachments) | Stable | Supports document-level embedded files. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Annotation count | `wasm_pdf_annotation_count` | No | Yes | [API](API.md#annotations) | Partial | Worker can add/update but not list annotations. |
@@ -46,6 +47,7 @@ Status legend:
 | Delete page | `wasm_pdf_delete_page` | No | Yes | [API](API.md#pages) | Partial | Candidate for worker mutation support. |
 | Copy page between documents | `wasm_pdf_copy_page` | No | Yes | [API](API.md#pages) | Partial | Direct API requires two open handles. |
 | Import page ranges | `wasm_pdf_import_pages` | No | Yes | [API](API.md#pages) | Partial | Direct API supports PDFium one-based page ranges. |
+| Add embedded attachment | `wasm_pdf_add_attachment` | `addAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#addattachment) | Stable | Writes document-level embedded file bytes and optional MIME subtype. |
 
 ## Content Editing
 
@@ -91,6 +93,7 @@ Status legend:
 | UTF-8 output buffers | Metadata/text APIs | No direct worker extraction | Yes | [API](API.md#metadata), [API](API.md#text-extraction-and-search) | Stable | Caller frees output with `wasm_pdf_free_buffer`. |
 | Binary search result buffer | `wasm_pdf_search_page_text` | Parsed by worker | Yes | [API](API.md#text-extraction-and-search) | Stable | Worker returns parsed match objects. |
 | Binary outline result buffer | `wasm_pdf_get_outline` | Parsed by worker | Yes | [API](API.md#outline-and-bookmarks) | Stable | Worker returns nested bookmark objects. |
+| Binary attachment info buffer | `wasm_pdf_get_attachment_info` | Parsed by worker | Yes | [API](API.md#embedded-attachments) | Stable | Worker returns attachment metadata objects. |
 | RGBA render buffers | Render APIs | `renderPage`, `renderPageArea` | Yes | [API](API.md#rendering) | Stable | Wrapper normalizes output to RGBA. |
 | RGBA image input | `wasm_pdf_add_rgba_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is row-major RGBA. |
 | JPEG image input | `wasm_pdf_add_jpeg_image_page` | `addImage` | Yes | [API](API.md#content-insertion) | Stable | Input is encoded JPEG bytes. |
@@ -109,6 +112,9 @@ Status legend:
 | `queryPageObjects` | Page object count/info | Object array | Stable | Read-only. |
 | `searchPageText` | Text search rectangles | Match array | Stable | Parses binary native buffer. |
 | `queryOutline` | Outline/bookmark navigation | Nested outline tree | Stable | Parses binary native buffer. |
+| `queryAttachments` | Embedded attachment listing | Attachment metadata array | Stable | Read-only. |
+| `readAttachment` | Embedded attachment bytes | Attachment metadata plus file bytes | Stable | Read-only. |
+| `addAttachment` | Add embedded file | Saved PDF bytes | Stable | Writes document-level embedded files. |
 | `deletePageObject` | Delete one page object | Saved PDF bytes | Stable | Regenerates page content. |
 | `transformPageObject` | Affine transform one page object | Saved PDF bytes | Stable | Matrix must be invertible. |
 | `queryDocument` | Page count, metadata, permissions, page geometry | Query payload | Planned | Would fill several current worker gaps. |

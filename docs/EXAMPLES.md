@@ -195,6 +195,49 @@ const navigation = renderBookmarkList(outline);
 
 `queryOutline` is read-only. Transfer a copied buffer if you still need the original PDF bytes for later edits.
 
+## Add And Read Embedded Attachments
+
+```js
+const attachmentBytes = new TextEncoder().encode("source data");
+
+const attached = await requestPdfWorker(
+  worker,
+  "addAttachment",
+  {
+    pdfBytes: inputBytes.buffer,
+    name: "source.txt",
+    fileBytes: attachmentBytes.buffer,
+    mimeType: "text/plain",
+  },
+  [inputBytes.buffer, attachmentBytes.buffer]
+);
+
+const queryBytes = new Uint8Array(attached.pdfBytes).slice();
+const { attachments } = await requestPdfWorker(
+  worker,
+  "queryAttachments",
+  {
+    pdfBytes: queryBytes.buffer,
+  },
+  [queryBytes.buffer]
+);
+
+const readBytes = new Uint8Array(attached.pdfBytes).slice();
+const { attachment } = await requestPdfWorker(
+  worker,
+  "readAttachment",
+  {
+    pdfBytes: readBytes.buffer,
+    attachmentIndex: attachments[0].index,
+  },
+  [readBytes.buffer]
+);
+
+const text = new TextDecoder().decode(attachment.fileBytes);
+```
+
+Attachment APIs operate on document-level embedded files. They are separate from file-attachment annotations.
+
 ## Render A Page Area
 
 ```js

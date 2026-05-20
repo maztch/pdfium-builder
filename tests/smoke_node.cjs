@@ -92,6 +92,30 @@ function parseOutlineItems(bytes) {
   return items;
 }
 
+function parseAttachmentInfo(bytes, index) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder('utf-8');
+  let offset = 0;
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readString() {
+    const size = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + size));
+    offset += size;
+    return value;
+  }
+
+  const name = readString();
+  const mimeType = readString();
+  const fileSize = view.getInt32(offset, true);
+  return { index, name, mimeType, fileSize };
+}
+
 async function main() {
   const { default: PdfiumWasm } = await import(pathToFileURL(path.join(distDir, 'pdfium.js')));
   const mod = await PdfiumWasm({
@@ -119,6 +143,13 @@ async function main() {
   let outlinePtr = 0;
   let outlinePtrPtr = 0;
   let outlineSizePtr = 0;
+  let attachmentDataPtr = 0;
+  let attachmentInfoPtr = 0;
+  let attachmentInfoPtrPtr = 0;
+  let attachmentInfoSizePtr = 0;
+  let attachmentFilePtr = 0;
+  let attachmentFilePtrPtr = 0;
+  let attachmentFileSizePtr = 0;
   let searchPtr = 0;
   let searchPtrPtr = 0;
   let searchSizePtr = 0;
@@ -164,10 +195,18 @@ async function main() {
     metadataSizePtr = mod._malloc(4);
     outlinePtrPtr = mod._malloc(4);
     outlineSizePtr = mod._malloc(4);
+    attachmentInfoPtrPtr = mod._malloc(4);
+    attachmentInfoSizePtr = mod._malloc(4);
+    attachmentFilePtrPtr = mod._malloc(4);
+    attachmentFileSizePtr = mod._malloc(4);
     assert.notEqual(metadataPtrPtr, 0, 'metadata out pointer malloc failed');
     assert.notEqual(metadataSizePtr, 0, 'metadata out size malloc failed');
     assert.notEqual(outlinePtrPtr, 0, 'outline out pointer malloc failed');
     assert.notEqual(outlineSizePtr, 0, 'outline out size malloc failed');
+    assert.notEqual(attachmentInfoPtrPtr, 0, 'attachment info out pointer malloc failed');
+    assert.notEqual(attachmentInfoSizePtr, 0, 'attachment info out size malloc failed');
+    assert.notEqual(attachmentFilePtrPtr, 0, 'attachment file out pointer malloc failed');
+    assert.notEqual(attachmentFileSizePtr, 0, 'attachment file out size malloc failed');
 
     const pageCount = mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]);
     assert.equal(pageCount, 1, 'page count should report one page');
@@ -358,6 +397,76 @@ async function main() {
     );
     assert.equal(invalidOutline, 0, 'invalid outline output pointer should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid outline output pointer should report invalid argument');
+
+    assert.equal(mod.ccall('wasm_pdf_attachment_count', 'number', ['number'], [handle]), 0, 'fixture should start with no attachments');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'attachment count should clear last error');
+
+    const attachmentBytes = Buffer.from('hello embedded attachment', 'utf8');
+    attachmentDataPtr = mod._malloc(attachmentBytes.length);
+    assert.notEqual(attachmentDataPtr, 0, 'attachment data malloc failed');
+    mod.HEAPU8.set(attachmentBytes, attachmentDataPtr);
+
+    const invalidAttachment = mod.ccall(
+      'wasm_pdf_add_attachment',
+      'number',
+      ['number', 'string', 'number', 'number', 'string'],
+      [handle, '', attachmentDataPtr, attachmentBytes.length, 'text/plain']
+    );
+    assert.equal(invalidAttachment, 0, 'empty attachment name should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'empty attachment name should report invalid argument');
+
+    const addedAttachment = mod.ccall(
+      'wasm_pdf_add_attachment',
+      'number',
+      ['number', 'string', 'number', 'number', 'string'],
+      [handle, 'notes-✓.txt', attachmentDataPtr, attachmentBytes.length, 'text/plain']
+    );
+    assert.equal(addedAttachment, 1, 'add attachment should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'add attachment should clear last error');
+    assert.equal(mod.ccall('wasm_pdf_attachment_count', 'number', ['number'], [handle]), 1, 'attachment count should include added attachment');
+
+    const gotAttachmentInfo = mod.ccall(
+      'wasm_pdf_get_attachment_info',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, attachmentInfoPtrPtr, attachmentInfoSizePtr]
+    );
+    assert.equal(gotAttachmentInfo, 1, 'attachment info should be readable');
+    attachmentInfoPtr = mod.getValue(attachmentInfoPtrPtr, 'i32');
+    const attachmentInfoSize = mod.getValue(attachmentInfoSizePtr, 'i32');
+    const attachmentInfo = parseAttachmentInfo(mod.HEAPU8.slice(attachmentInfoPtr, attachmentInfoPtr + attachmentInfoSize), 0);
+    assert.equal(attachmentInfo.name, 'notes-✓.txt', 'attachment name should round-trip as UTF-8');
+    assert.equal(attachmentInfo.mimeType, 'text/plain', 'attachment MIME type should be readable');
+    assert.equal(attachmentInfo.fileSize, attachmentBytes.length, 'attachment file size should match');
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentInfoPtr]);
+    attachmentInfoPtr = 0;
+
+    const gotAttachmentFile = mod.ccall(
+      'wasm_pdf_get_attachment_file',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, attachmentFilePtrPtr, attachmentFileSizePtr]
+    );
+    assert.equal(gotAttachmentFile, 1, 'attachment file should be readable');
+    attachmentFilePtr = mod.getValue(attachmentFilePtrPtr, 'i32');
+    const attachmentFileSize = mod.getValue(attachmentFileSizePtr, 'i32');
+    assert.equal(attachmentFileSize, attachmentBytes.length, 'attachment file output size should match');
+    assert.equal(
+      Buffer.from(mod.HEAPU8.subarray(attachmentFilePtr, attachmentFilePtr + attachmentFileSize)).toString('utf8'),
+      'hello embedded attachment',
+      'attachment bytes should round-trip'
+    );
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
+    attachmentFilePtr = 0;
+
+    const invalidAttachmentRead = mod.ccall(
+      'wasm_pdf_get_attachment_info',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 9, attachmentInfoPtrPtr, attachmentInfoSizePtr]
+    );
+    assert.equal(invalidAttachmentRead, 0, 'invalid attachment index should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid attachment index should report invalid argument');
 
     const inserted = mod.ccall(
       'wasm_pdf_insert_blank_page',
@@ -952,6 +1061,24 @@ async function main() {
     assert.equal(savedOutlineItems[1].title, 'Section 1.1', 'saved nested outline title should persist');
     mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outlinePtr]);
     outlinePtr = 0;
+
+    assert.equal(mod.ccall('wasm_pdf_attachment_count', 'number', ['number'], [reopened]), 1, 'saved PDF attachment count should persist');
+    assert.equal(mod.ccall(
+      'wasm_pdf_get_attachment_file',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [reopened, 0, attachmentFilePtrPtr, attachmentFileSizePtr]
+    ), 1, 'saved PDF attachment file should be readable');
+    attachmentFilePtr = mod.getValue(attachmentFilePtrPtr, 'i32');
+    const savedAttachmentFileSize = mod.getValue(attachmentFileSizePtr, 'i32');
+    assert.equal(savedAttachmentFileSize, attachmentBytes.length, 'saved attachment file size should match');
+    assert.equal(
+      Buffer.from(mod.HEAPU8.subarray(attachmentFilePtr, attachmentFilePtr + savedAttachmentFileSize)).toString('utf8'),
+      'hello embedded attachment',
+      'saved attachment bytes should persist'
+    );
+    mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
+    attachmentFilePtr = 0;
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     console.log(`Smoke test passed: ${inputBytes.length} input bytes -> ${outSize} output bytes`);
@@ -960,6 +1087,8 @@ async function main() {
     if (renderPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [renderPtr]);
     if (textPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [textPtr]);
     if (outlinePtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outlinePtr]);
+    if (attachmentInfoPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentInfoPtr]);
+    if (attachmentFilePtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [attachmentFilePtr]);
     if (metadataPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [metadataPtr]);
     if (outPtr) mod.ccall('wasm_pdf_free_buffer', null, ['number'], [outPtr]);
     if (sourceHandle) mod.ccall('wasm_pdf_close', null, ['number'], [sourceHandle]);
@@ -968,6 +1097,7 @@ async function main() {
     if (imagePtr) mod._free(imagePtr);
     if (jpegPtr) mod._free(jpegPtr);
     if (pngPtr) mod._free(pngPtr);
+    if (attachmentDataPtr) mod._free(attachmentDataPtr);
     if (typePtr) mod._free(typePtr);
     if (widthPtr) mod._free(widthPtr);
     if (heightPtr) mod._free(heightPtr);
@@ -979,6 +1109,10 @@ async function main() {
     if (metadataSizePtr) mod._free(metadataSizePtr);
     if (outlinePtrPtr) mod._free(outlinePtrPtr);
     if (outlineSizePtr) mod._free(outlineSizePtr);
+    if (attachmentInfoPtrPtr) mod._free(attachmentInfoPtrPtr);
+    if (attachmentInfoSizePtr) mod._free(attachmentInfoSizePtr);
+    if (attachmentFilePtrPtr) mod._free(attachmentFilePtrPtr);
+    if (attachmentFileSizePtr) mod._free(attachmentFileSizePtr);
     if (searchPtrPtr) mod._free(searchPtrPtr);
     if (searchSizePtr) mod._free(searchSizePtr);
     if (renderPtrPtr) mod._free(renderPtrPtr);

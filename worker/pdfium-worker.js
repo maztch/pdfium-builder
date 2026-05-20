@@ -54,6 +54,9 @@ const ERROR_NAMES = Object.freeze({
   50: "load_jpeg_failed",
   51: "decode_png_failed",
   52: "outline_read_failed",
+  53: "add_attachment_failed",
+  54: "attachment_read_failed",
+  55: "attachment_write_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -230,6 +233,35 @@ function parseOutline(bytes) {
   }
 
   return roots;
+}
+
+function parseAttachmentInfo(bytes, index) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder("utf-8");
+  let offset = 0;
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = decoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  const name = readString();
+  const mimeType = readString();
+  const fileSize = view.getInt32(offset, true);
+  return {
+    index,
+    name,
+    mimeType: mimeType || null,
+    fileSize,
+  };
 }
 
 async function addText(payload = {}) {
@@ -949,6 +981,207 @@ async function queryOutline(payload = {}) {
   }
 }
 
+async function queryAttachments(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!inputPtr || !outPtrPtr || !outSizePtr) {
+      throw new PdfiumWorkerError("Unable to allocate attachment query buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const count = mod.ccall("wasm_pdf_attachment_count", "number", ["number"], [handle]);
+    if (count < 0) throwPdfiumError(mod, "Unable to count attachments");
+
+    const attachments = [];
+    for (let index = 0; index < count; index += 1) {
+      const queried = mod.ccall(
+        "wasm_pdf_get_attachment_info",
+        "number",
+        ["number", "number", "number", "number"],
+        [handle, index, outPtrPtr, outSizePtr]
+      );
+      if (!queried) throwPdfiumError(mod, "Unable to query attachment info");
+
+      outPtr = mod.getValue(outPtrPtr, "i32");
+      const outSize = mod.getValue(outSizePtr, "i32");
+      if (!outPtr || outSize < 12) throw new PdfiumWorkerError("Attachment info output is invalid", 54);
+
+      const bytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+      attachments.push(parseAttachmentInfo(bytes, index));
+      mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+      outPtr = 0;
+    }
+
+    return { attachments };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
+async function readAttachment(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const attachmentIndex = numberOrDefault(payload.attachmentIndex, -1);
+
+  let inputPtr = 0;
+  let infoPtrPtr = 0;
+  let infoSizePtr = 0;
+  let filePtrPtr = 0;
+  let fileSizePtr = 0;
+  let infoPtr = 0;
+  let filePtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    infoPtrPtr = mod._malloc(4);
+    infoSizePtr = mod._malloc(4);
+    filePtrPtr = mod._malloc(4);
+    fileSizePtr = mod._malloc(4);
+    if (!inputPtr || !infoPtrPtr || !infoSizePtr || !filePtrPtr || !fileSizePtr) {
+      throw new PdfiumWorkerError("Unable to allocate attachment read buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const queried = mod.ccall(
+      "wasm_pdf_get_attachment_info",
+      "number",
+      ["number", "number", "number", "number"],
+      [handle, attachmentIndex, infoPtrPtr, infoSizePtr]
+    );
+    if (!queried) throwPdfiumError(mod, "Unable to query attachment info");
+
+    infoPtr = mod.getValue(infoPtrPtr, "i32");
+    const infoSize = mod.getValue(infoSizePtr, "i32");
+    if (!infoPtr || infoSize < 12) throw new PdfiumWorkerError("Attachment info output is invalid", 54);
+    const attachment = parseAttachmentInfo(mod.HEAPU8.slice(infoPtr, infoPtr + infoSize), attachmentIndex);
+
+    const read = mod.ccall(
+      "wasm_pdf_get_attachment_file",
+      "number",
+      ["number", "number", "number", "number"],
+      [handle, attachmentIndex, filePtrPtr, fileSizePtr]
+    );
+    if (!read) throwPdfiumError(mod, "Unable to read attachment file");
+
+    filePtr = mod.getValue(filePtrPtr, "i32");
+    const fileSize = mod.getValue(fileSizePtr, "i32");
+    const fileBytes = fileSize > 0 ? mod.HEAPU8.slice(filePtr, filePtr + fileSize) : new Uint8Array();
+    return { attachment: { ...attachment, fileBytes: fileBytes.buffer } };
+  } finally {
+    if (infoPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [infoPtr]);
+    if (filePtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [filePtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (infoPtrPtr) mod._free(infoPtrPtr);
+    if (infoSizePtr) mod._free(infoSizePtr);
+    if (filePtrPtr) mod._free(filePtrPtr);
+    if (fileSizePtr) mod._free(fileSizePtr);
+  }
+}
+
+async function addAttachment(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const fileBytes = asUint8Array(payload.fileBytes, "payload.fileBytes");
+
+  let inputPtr = 0;
+  let filePtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    filePtr = fileBytes.length > 0 ? mod._malloc(fileBytes.length) : 0;
+    if (!inputPtr || (fileBytes.length > 0 && !filePtr)) {
+      throw new PdfiumWorkerError("Unable to allocate attachment input buffers", 3);
+    }
+    mod.HEAPU8.set(inputBytes, inputPtr);
+    if (fileBytes.length > 0) mod.HEAPU8.set(fileBytes, filePtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const added = mod.ccall(
+      "wasm_pdf_add_attachment",
+      "number",
+      ["number", "string", "number", "number", "string"],
+      [
+        handle,
+        stringOrDefault(payload.name, ""),
+        filePtr,
+        fileBytes.length,
+        stringOrDefault(payload.mimeType, ""),
+      ]
+    );
+    if (!added) throwPdfiumError(mod, "Unable to add attachment");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (filePtr) mod._free(filePtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function deletePageObject(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -1103,6 +1336,15 @@ async function handleRequest(message = {}) {
   if (message.type === "queryOutline") {
     return queryOutline(message.payload);
   }
+  if (message.type === "queryAttachments") {
+    return queryAttachments(message.payload);
+  }
+  if (message.type === "readAttachment") {
+    return readAttachment(message.payload);
+  }
+  if (message.type === "addAttachment") {
+    return addAttachment(message.payload);
+  }
   if (message.type === "deletePageObject") {
     return deletePageObject(message.payload);
   }
@@ -1125,6 +1367,7 @@ function transferablesFor(response) {
   const transferables = [];
   if (response?.pdfBytes instanceof ArrayBuffer) transferables.push(response.pdfBytes);
   if (response?.rgbaBytes instanceof ArrayBuffer) transferables.push(response.rgbaBytes);
+  if (response?.attachment?.fileBytes instanceof ArrayBuffer) transferables.push(response.attachment.fileBytes);
   return transferables;
 }
 

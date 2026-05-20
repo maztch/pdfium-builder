@@ -212,6 +212,33 @@ Use `queryOutline` to build a navigation tree from PDF bookmarks:
 }
 ```
 
+Use `queryAttachments`, `readAttachment`, and `addAttachment` for document-level embedded files:
+
+```js
+{
+  id: "request-attachments",
+  type: "queryAttachments",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    password: ""
+  }
+}
+```
+
+```js
+{
+  id: "request-add-attachment",
+  type: "addAttachment",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    name: "source.txt",
+    fileBytes: fileBytes.buffer,
+    mimeType: "text/plain",
+    password: ""
+  }
+}
+```
+
 Use `transformPageObject` to move, scale, rotate, or shear a selected object:
 
 ```js
@@ -463,7 +490,7 @@ Annotation update requests also return a saved PDF. Supported `updateType` value
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `queryOutline`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `queryOutline`, `queryAttachments`, `readAttachment`, `addAttachment`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 
