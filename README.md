@@ -86,6 +86,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_page_object_count(handle, pageIndex)`
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)`
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)`
+- `wasm_pdf_transform_page_object(handle, pageIndex, objectIndex, a, b, c, d, e, f)`
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)`
 - `wasm_pdf_delete_page(handle, pageIndex)`
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)`
@@ -140,6 +141,7 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `37`: page object lookup failed
 - `38`: page object bounds failed
 - `39`: page object delete failed
+- `40`: page object transform failed
 
 Query return conventions:
 
@@ -157,6 +159,7 @@ Query return conventions:
 - `wasm_pdf_page_object_count(handle, pageIndex)` returns the number of page content objects, or `-1` on failure.
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)` returns `1` on success and writes the object type plus PDF user-space bounds.
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object from the page, regenerates page content, and returns `1` on success.
+- `wasm_pdf_transform_page_object(handle, pageIndex, objectIndex, a, b, c, d, e, f)` applies an affine matrix to a content object, regenerates page content, and returns `1` on success. The matrix is `[a b c d e f]`, equivalent to `x' = a*x + c*y + e` and `y' = b*x + d*y + f`; the matrix must be invertible.
 - `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. A `pageIndex` larger than the last page appends.
 - `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
 - `wasm_pdf_copy_page(srcHandle, srcPageIndex, dstHandle, dstPageIndex)` imports one source page into the destination document. `dstPageIndex` may equal the destination page count to append.
@@ -201,7 +204,7 @@ Metadata keys:
 4. Optionally mutate pages with `wasm_pdf_insert_blank_page`, `wasm_pdf_delete_page`, `wasm_pdf_copy_page`, or `wasm_pdf_import_pages`
 5. Optionally mutate page geometry with `wasm_pdf_set_page_rotation`, `wasm_pdf_set_page_box`, or `wasm_pdf_set_page_size`
 6. Optionally mutate document metadata with `wasm_pdf_set_metadata`
-7. Optionally call `wasm_pdf_add_text_page`, `wasm_pdf_add_rgba_image_page`, or `wasm_pdf_delete_page_object`
+7. Optionally call `wasm_pdf_add_text_page`, `wasm_pdf_add_rgba_image_page`, `wasm_pdf_transform_page_object`, or `wasm_pdf_delete_page_object`
 8. Optionally call `wasm_pdf_render_page_rgba` or `wasm_pdf_render_page_area_rgba` for preview pixels
 9. Call `wasm_pdf_save_copy`
 10. Create a Blob and download/save
@@ -220,6 +223,7 @@ Supported message types:
 - `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `queryPageObjects`: payload includes `pdfBytes` and optional `pageIndex`; response payload includes `objects`.
 - `deletePageObject`: payload includes `pdfBytes`, `pageIndex`, and `objectIndex`; response payload includes `pdfBytes`.
+- `transformPageObject`: payload includes `pdfBytes`, `pageIndex`, `objectIndex`, and affine matrix values `a`, `b`, `c`, `d`, `e`, `f`; response payload includes `pdfBytes`.
 
 ```js
 const worker = new Worker(new URL("./worker/pdfium-worker.js", import.meta.url), { type: "module" });

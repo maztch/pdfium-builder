@@ -67,6 +67,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED = 37,
   WASM_PDF_ERROR_PAGE_OBJECT_BOUNDS_FAILED = 38,
   WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED = 39,
+  WASM_PDF_ERROR_PAGE_OBJECT_TRANSFORM_FAILED = 40,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -985,6 +986,82 @@ int wasm_pdf_delete_page_object(uintptr_t handle, int page_index, int object_ind
     return 0;
   }
 
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_transform_page_object(uintptr_t handle,
+                                   int page_index,
+                                   int object_index,
+                                   double a,
+                                   double b,
+                                   double c,
+                                   double d,
+                                   double e,
+                                   double f) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (object_index < 0 || !std::isfinite(a) || !std::isfinite(b) ||
+      !std::isfinite(c) || !std::isfinite(d) || !std::isfinite(e) ||
+      !std::isfinite(f) || (a * d - b * c) == 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  if (object_count < 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+  if (object_index >= object_count) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, object_index);
+  if (!object) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+
+  const FS_MATRIX matrix{
+      static_cast<float>(a),
+      static_cast<float>(b),
+      static_cast<float>(c),
+      static_cast<float>(d),
+      static_cast<float>(e),
+      static_cast<float>(f),
+  };
+  if (!FPDFPageObj_TransformF(object, &matrix)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_TRANSFORM_FAILED);
+    return 0;
+  }
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return 0;
+  }
+
+  FPDF_ClosePage(page);
   ClearLastError();
   return 1;
 }

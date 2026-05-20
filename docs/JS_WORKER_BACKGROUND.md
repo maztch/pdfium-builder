@@ -121,6 +121,27 @@ For object selection UIs, use `queryPageObjects` and `deletePageObject`:
 }
 ```
 
+Use `transformPageObject` to move, scale, rotate, or shear a selected object:
+
+```js
+{
+  id: "request-7",
+  type: "transformPageObject",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    objectIndex: 1,
+    a: 1,
+    b: 0,
+    c: 0,
+    d: 1,
+    e: 24,
+    f: 36,
+    password: ""
+  }
+}
+```
+
 Successful responses use this shape:
 
 ```js
@@ -266,7 +287,7 @@ worker.postMessage(
 
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, `renderPageArea`, `queryPageObjects`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `renderPage`, `renderPageArea`, `queryPageObjects`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

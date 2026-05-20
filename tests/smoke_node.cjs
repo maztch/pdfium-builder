@@ -400,6 +400,36 @@ async function main() {
     assert.equal(mod.getValue(rightPtr, 'double'), 120, 'image object right should match placement');
     assert.equal(mod.getValue(topPtr, 'double'), 168, 'image object top should match placement');
 
+    const invalidTransform = mod.ccall(
+      'wasm_pdf_transform_page_object',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, 0, 0, 0, 0, 0, 0]
+    );
+    assert.equal(invalidTransform, 0, 'singular object transform should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'singular object transform should report invalid argument');
+
+    const transformedImage = mod.ccall(
+      'wasm_pdf_transform_page_object',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, 1, 0, 0, 1, 10, 20]
+    );
+    assert.equal(transformedImage, 1, 'translate page object should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid object transform should clear last error');
+
+    const gotTransformedImageObject = mod.ccall(
+      'wasm_pdf_get_page_object_info',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 1, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+    );
+    assert.equal(gotTransformedImageObject, 1, 'transformed image page object info should be readable');
+    assert.equal(mod.getValue(leftPtr, 'double'), 82, 'transformed image object left should move');
+    assert.equal(mod.getValue(bottomPtr, 'double'), 140, 'transformed image object bottom should move');
+    assert.equal(mod.getValue(rightPtr, 'double'), 130, 'transformed image object right should move');
+    assert.equal(mod.getValue(topPtr, 'double'), 188, 'transformed image object top should move');
+
     const invalidObjectInfo = mod.ccall(
       'wasm_pdf_get_page_object_info',
       'number',
