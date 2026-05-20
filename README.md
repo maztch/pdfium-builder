@@ -76,6 +76,8 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)`
 - `wasm_pdf_get_page_rotation(handle, pageIndex)`
 - `wasm_pdf_get_permissions(handle)`
+- `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)`
+- `wasm_pdf_delete_page(handle, pageIndex)`
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)`
 - `wasm_pdf_save_copy(handle, outPtrPtr, outSizePtr)`
 - `wasm_pdf_free_buffer(ptr)`
@@ -99,6 +101,8 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `13`: write failed
 - `14`: output too large
 - `15`: invalid UTF-8 text
+- `16`: create page failed
+- `17`: delete page failed
 - `20`: PDFium unknown error
 - `21`: PDFium file error
 - `22`: PDFium format error
@@ -112,15 +116,18 @@ Query return conventions:
 - `wasm_pdf_get_page_size(handle, pageIndex, widthPtr, heightPtr)` returns `1` on success and writes doubles to `widthPtr` / `heightPtr`; it returns `0` on failure.
 - `wasm_pdf_get_page_rotation(handle, pageIndex)` returns `0`, `1`, `2`, or `3` for 0, 90, 180, or 270 degrees clockwise; it returns `-1` on failure.
 - `wasm_pdf_get_permissions(handle)` returns PDF permission flags. Unprotected or owner-unlocked documents usually return `0xffffffff`; `0` indicates failure when paired with a non-zero `wasm_pdf_last_error()`.
+- `wasm_pdf_insert_blank_page(handle, pageIndex, width, height)` returns `1` on success and `0` on failure. A `pageIndex` larger than the last page appends.
+- `wasm_pdf_delete_page(handle, pageIndex)` returns `1` on success and `0` on failure.
 
 ## Browser usage flow
 
 1. Read input PDF into `Uint8Array`
 2. Call `wasm_pdf_open_from_bytes`
 3. Optionally call query APIs like `wasm_pdf_page_count`, `wasm_pdf_get_page_size`, `wasm_pdf_get_page_rotation`, and `wasm_pdf_get_permissions`
-4. Call `wasm_pdf_add_text_page`
-5. Call `wasm_pdf_save_copy`
-6. Create a Blob and download/save
+4. Optionally mutate pages with `wasm_pdf_insert_blank_page` / `wasm_pdf_delete_page`
+5. Call `wasm_pdf_add_text_page`
+6. Call `wasm_pdf_save_copy`
+7. Create a Blob and download/save
 
 See: `examples/browser_add_text_example.js`
 

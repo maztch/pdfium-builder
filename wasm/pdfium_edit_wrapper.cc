@@ -31,6 +31,8 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_WRITE_FAILED = 13,
   WASM_PDF_ERROR_OUTPUT_TOO_LARGE = 14,
   WASM_PDF_ERROR_INVALID_UTF8 = 15,
+  WASM_PDF_ERROR_CREATE_PAGE_FAILED = 16,
+  WASM_PDF_ERROR_DELETE_PAGE_FAILED = 17,
   WASM_PDF_ERROR_PDFIUM_UNKNOWN = 20,
   WASM_PDF_ERROR_PDFIUM_FILE = 21,
   WASM_PDF_ERROR_PDFIUM_FORMAT = 22,
@@ -343,6 +345,65 @@ uint32_t wasm_pdf_get_permissions(uintptr_t handle) {
   const auto permissions = static_cast<uint32_t>(FPDF_GetDocPermissions(doc));
   ClearLastError();
   return permissions;
+}
+
+int wasm_pdf_insert_blank_page(uintptr_t handle,
+                               int page_index,
+                               double width,
+                               double height) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (page_index < 0 || width <= 0 || height <= 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDFPage_New(doc, page_index, width, height);
+  if (!page) {
+    SetLastError(WASM_PDF_ERROR_CREATE_PAGE_FAILED);
+    return 0;
+  }
+
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_delete_page(uintptr_t handle, int page_index) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  const int page_count_before = FPDF_GetPageCount(doc);
+  if (page_index < 0 || page_index >= page_count_before) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDFPage_Delete(doc, page_index);
+
+  if (FPDF_GetPageCount(doc) != page_count_before - 1) {
+    SetLastError(WASM_PDF_ERROR_DELETE_PAGE_FAILED);
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
 }
 
 int wasm_pdf_add_text_page(uintptr_t handle,

@@ -120,6 +120,33 @@ async function main() {
     assert.equal(permissions >>> 0, 0xffffffff, 'unprotected fixture should report full permissions');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'permissions should clear last error');
 
+    const inserted = mod.ccall(
+      'wasm_pdf_insert_blank_page',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 1, 300, 400]
+    );
+    assert.equal(inserted, 1, 'blank page insert should succeed');
+    assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]), 2, 'insert should add one page');
+
+    const gotInsertedPageSize = mod.ccall(
+      'wasm_pdf_get_page_size',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 1, widthPtr, heightPtr]
+    );
+    assert.equal(gotInsertedPageSize, 1, 'inserted page size should be readable');
+    assert.equal(mod.getValue(widthPtr, 'double'), 300, 'inserted page width should match');
+    assert.equal(mod.getValue(heightPtr, 'double'), 400, 'inserted page height should match');
+
+    const deleted = mod.ccall('wasm_pdf_delete_page', 'number', ['number', 'number'], [handle, 1]);
+    assert.equal(deleted, 1, 'delete page should succeed');
+    assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [handle]), 1, 'delete should remove one page');
+
+    const invalidDelete = mod.ccall('wasm_pdf_delete_page', 'number', ['number', 'number'], [handle, 99]);
+    assert.equal(invalidDelete, 0, 'invalid delete should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'invalid delete should report invalid argument');
+
     invalidTextPtr = mod._malloc(3);
     assert.notEqual(invalidTextPtr, 0, 'invalid text malloc failed');
     mod.HEAPU8.set([0xc3, 0x28, 0], invalidTextPtr);
