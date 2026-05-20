@@ -114,6 +114,26 @@ Use `addAnnotation` to create highlights, links, text notes, or rectangle annota
 }
 ```
 
+Use `updateAnnotation` to change an existing annotation:
+
+```js
+{
+  id: "request-update-annotation",
+  type: "updateAnnotation",
+  payload: {
+    pdfBytes: inputBytes.buffer,
+    updateType: "rect",
+    pageIndex: 0,
+    annotationIndex: 0,
+    left: 80,
+    bottom: 705,
+    right: 270,
+    top: 740,
+    password: ""
+  }
+}
+```
+
 For object selection UIs, use `queryPageObjects` and `deletePageObject`:
 
 ```js
@@ -357,9 +377,11 @@ worker.postMessage(
 );
 ```
 
+Annotation update requests also return a saved PDF. Supported `updateType` values are `rect`, `color`, `text`, and `uri`.
+
 ## Cleanup behavior
 
-The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
+The worker initializes PDFium once and reuses the module. Each `addText`, `addImage`, `addAnnotation`, `updateAnnotation`, `renderPage`, `renderPageArea`, `queryPageObjects`, `searchPageText`, `transformPageObject`, and `deletePageObject` request closes its document handle and frees every request-local WASM allocation in a `finally` path.
 
 Requests are serialized through an internal queue so multiple main-thread messages cannot interleave PDFium state changes.
 

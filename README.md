@@ -89,6 +89,10 @@ From `wasm/pdfium_edit_wrapper.cc`:
 - `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)`
 - `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)`
 - `wasm_pdf_add_rectangle_annotation(handle, pageIndex, left, bottom, right, top, strokeRgba, borderWidth)`
+- `wasm_pdf_set_annotation_rect(handle, pageIndex, annotationIndex, left, bottom, right, top)`
+- `wasm_pdf_set_annotation_color(handle, pageIndex, annotationIndex, rgba)`
+- `wasm_pdf_set_annotation_text(handle, pageIndex, annotationIndex, contents)`
+- `wasm_pdf_set_annotation_uri(handle, pageIndex, annotationIndex, uri)`
 - `wasm_pdf_page_object_count(handle, pageIndex)`
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)`
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)`
@@ -176,6 +180,10 @@ Query return conventions:
 - `wasm_pdf_add_link_annotation(handle, pageIndex, left, bottom, right, top, uri)` creates a link annotation with one quad and URI action. `uri` must be non-empty 7-bit ASCII.
 - `wasm_pdf_add_text_note_annotation(handle, pageIndex, x, y, contents, rgba)` creates a text note annotation with a 20x20 icon rectangle. `contents` must be valid UTF-8.
 - `wasm_pdf_add_rectangle_annotation(handle, pageIndex, left, bottom, right, top, strokeRgba, borderWidth)` creates a square/rectangle annotation. `borderWidth` must be finite and non-negative.
+- `wasm_pdf_set_annotation_rect(handle, pageIndex, annotationIndex, left, bottom, right, top)` updates an annotation rectangle. For markup/link annotations it also updates the first quadpoint set.
+- `wasm_pdf_set_annotation_color(handle, pageIndex, annotationIndex, rgba)` updates annotation stroke/markup color.
+- `wasm_pdf_set_annotation_text(handle, pageIndex, annotationIndex, contents)` updates the annotation `Contents` string. `contents` must be valid UTF-8.
+- `wasm_pdf_set_annotation_uri(handle, pageIndex, annotationIndex, uri)` updates a link annotation URI. `uri` must be non-empty 7-bit ASCII.
 - `wasm_pdf_page_object_count(handle, pageIndex)` returns the number of page content objects, or `-1` on failure.
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)` returns `1` on success and writes the object type plus PDF user-space bounds.
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object from the page, regenerates page content, and returns `1` on success.
@@ -253,6 +261,7 @@ Supported message types:
 - `addText`: payload includes `pdfBytes`, `text`, and optional placement/style fields.
 - `addImage`: payload includes `pdfBytes`, `rgbaBytes`, `imageWidth`, `imageHeight`, `x`, `y`, `displayWidth`, and `displayHeight`.
 - `addAnnotation`: payload includes `pdfBytes`, `annotationType`, and type-specific fields. Supported values: `highlight`, `link`, `textNote`, `rectangle`.
+- `updateAnnotation`: payload includes `pdfBytes`, `updateType`, `pageIndex`, `annotationIndex`, and type-specific fields. Supported `updateType` values: `rect`, `color`, `text`, `uri`.
 - `renderPage`: payload includes `pdfBytes`, `width`, `height`, and optional `pageIndex`, `flags`, and `password`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `renderPageArea`: payload includes `pdfBytes`, `left`, `bottom`, `right`, `top`, `width`, and `height`; response payload includes `rgbaBytes`, `width`, and `height`.
 - `queryPageObjects`: payload includes `pdfBytes` and optional `pageIndex`; response payload includes `objects`.

@@ -400,6 +400,102 @@ async function addAnnotation(payload = {}) {
   }
 }
 
+async function updateAnnotation(payload = {}) {
+  const mod = await getModule();
+  const inputBytes = asUint8Array(payload.pdfBytes);
+  const updateType = stringOrDefault(payload.updateType, "");
+
+  let inputPtr = 0;
+  let outPtrPtr = 0;
+  let outSizePtr = 0;
+  let outPtr = 0;
+  let handle = 0;
+
+  try {
+    inputPtr = mod._malloc(inputBytes.length);
+    if (!inputPtr) throw new PdfiumWorkerError("Unable to allocate input PDF buffer", 3);
+    mod.HEAPU8.set(inputBytes, inputPtr);
+
+    handle = mod.ccall(
+      "wasm_pdf_open_from_bytes",
+      "number",
+      ["number", "number", "string"],
+      [inputPtr, inputBytes.length, stringOrDefault(payload.password, "")]
+    );
+    if (!handle) throwPdfiumError(mod, "Unable to open PDF");
+
+    const pageIndex = numberOrDefault(payload.pageIndex, 0);
+    const annotationIndex = numberOrDefault(payload.annotationIndex, -1);
+    let updated = 0;
+    if (updateType === "rect") {
+      updated = mod.ccall(
+        "wasm_pdf_set_annotation_rect",
+        "number",
+        ["number", "number", "number", "number", "number", "number", "number"],
+        [
+          handle,
+          pageIndex,
+          annotationIndex,
+          numberOrDefault(payload.left, 0),
+          numberOrDefault(payload.bottom, 0),
+          numberOrDefault(payload.right, 0),
+          numberOrDefault(payload.top, 0),
+        ]
+      );
+    } else if (updateType === "color") {
+      updated = mod.ccall(
+        "wasm_pdf_set_annotation_color",
+        "number",
+        ["number", "number", "number", "number"],
+        [handle, pageIndex, annotationIndex, numberOrDefault(payload.rgba, 0xff000000)]
+      );
+    } else if (updateType === "text") {
+      updated = mod.ccall(
+        "wasm_pdf_set_annotation_text",
+        "number",
+        ["number", "number", "number", "string"],
+        [handle, pageIndex, annotationIndex, stringOrDefault(payload.contents, "")]
+      );
+    } else if (updateType === "uri") {
+      updated = mod.ccall(
+        "wasm_pdf_set_annotation_uri",
+        "number",
+        ["number", "number", "number", "string"],
+        [handle, pageIndex, annotationIndex, stringOrDefault(payload.uri, "")]
+      );
+    } else {
+      throw new PdfiumWorkerError(`Unsupported annotation update type: ${updateType}`, 2);
+    }
+
+    if (!updated) throwPdfiumError(mod, "Unable to update annotation");
+
+    outPtrPtr = mod._malloc(4);
+    outSizePtr = mod._malloc(4);
+    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
+
+    const saved = mod.ccall(
+      "wasm_pdf_save_copy",
+      "number",
+      ["number", "number", "number"],
+      [handle, outPtrPtr, outSizePtr]
+    );
+    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
+
+    outPtr = mod.getValue(outPtrPtr, "i32");
+    const outSize = mod.getValue(outSizePtr, "i32");
+    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
+
+    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
+    return { pdfBytes: outBytes.buffer };
+  } finally {
+    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
+    if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
+    if (inputPtr) mod._free(inputPtr);
+    if (outPtrPtr) mod._free(outPtrPtr);
+    if (outSizePtr) mod._free(outSizePtr);
+  }
+}
+
 async function renderPage(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
@@ -784,6 +880,9 @@ async function handleRequest(message = {}) {
   }
   if (message.type === "addAnnotation") {
     return addAnnotation(message.payload);
+  }
+  if (message.type === "updateAnnotation") {
+    return updateAnnotation(message.payload);
   }
   if (message.type === "renderPage") {
     return renderPage(message.payload);

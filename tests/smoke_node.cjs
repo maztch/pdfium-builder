@@ -505,6 +505,58 @@ async function main() {
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid annotation insert should clear last error');
     assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 4, 'annotation inserts should add four annotations');
 
+    const updatedHighlightRect = mod.ccall(
+      'wasm_pdf_set_annotation_rect',
+      'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number'],
+      [handle, 0, 0, 80, 705, 270, 740]
+    );
+    assert.equal(updatedHighlightRect, 1, 'update highlight rect should succeed');
+
+    const updatedHighlightColor = mod.ccall(
+      'wasm_pdf_set_annotation_color',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, 0, 0x8000ff00]
+    );
+    assert.equal(updatedHighlightColor, 1, 'update highlight color should succeed');
+
+    const invalidAnnotationText = mod.ccall(
+      'wasm_pdf_set_annotation_text',
+      'number',
+      ['number', 'number', 'number', 'number'],
+      [handle, 0, 2, invalidTextPtr]
+    );
+    assert.equal(invalidAnnotationText, 0, 'malformed annotation text update should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 15, 'malformed annotation text update should report invalid UTF-8');
+
+    const updatedNoteText = mod.ccall(
+      'wasm_pdf_set_annotation_text',
+      'number',
+      ['number', 'number', 'number', 'string'],
+      [handle, 0, 2, 'Updated note: café 中文']
+    );
+    assert.equal(updatedNoteText, 1, 'update note text should succeed');
+
+    const invalidUriUpdate = mod.ccall(
+      'wasm_pdf_set_annotation_uri',
+      'number',
+      ['number', 'number', 'number', 'string'],
+      [handle, 0, 1, 'https://example.com/café']
+    );
+    assert.equal(invalidUriUpdate, 0, 'non-ASCII annotation URI update should fail');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'non-ASCII annotation URI update should report invalid argument');
+
+    const updatedLinkUri = mod.ccall(
+      'wasm_pdf_set_annotation_uri',
+      'number',
+      ['number', 'number', 'number', 'string'],
+      [handle, 0, 1, 'https://example.org/updated']
+    );
+    assert.equal(updatedLinkUri, 1, 'update link URI should succeed');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid annotation updates should clear last error');
+    assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [handle, 0]), 4, 'annotation updates should not change annotation count');
+
     outPtrPtr = mod._malloc(4);
     outSizePtr = mod._malloc(4);
     assert.notEqual(outPtrPtr, 0, 'out pointer malloc failed');

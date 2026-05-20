@@ -1323,6 +1323,231 @@ int wasm_pdf_add_rectangle_annotation(uintptr_t handle,
   return 1;
 }
 
+int wasm_pdf_set_annotation_rect(uintptr_t handle,
+                                 int page_index,
+                                 int annotation_index,
+                                 double left,
+                                 double bottom,
+                                 double right,
+                                 double top) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (annotation_index < 0 || !IsValidPageRect(left, bottom, right, top)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, annotation_index);
+  if (!annot) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  const FS_RECTF rect = MakePdfRect(left, bottom, right, top);
+  if (!FPDFAnnot_SetRect(annot, &rect)) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_RECT_FAILED);
+    return 0;
+  }
+
+  const FPDF_ANNOTATION_SUBTYPE subtype = FPDFAnnot_GetSubtype(annot);
+  if (subtype == FPDF_ANNOT_HIGHLIGHT || subtype == FPDF_ANNOT_LINK ||
+      subtype == FPDF_ANNOT_UNDERLINE || subtype == FPDF_ANNOT_SQUIGGLY ||
+      subtype == FPDF_ANNOT_STRIKEOUT) {
+    const FS_QUADPOINTSF quad = MakePdfQuad(left, bottom, right, top);
+    if (FPDFAnnot_CountAttachmentPoints(annot) > 0) {
+      if (!FPDFAnnot_SetAttachmentPoints(annot, 0, &quad)) {
+        FPDFPage_CloseAnnot(annot);
+        FPDF_ClosePage(page);
+        SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_ATTACHMENT_FAILED);
+        return 0;
+      }
+    } else if (!FPDFAnnot_AppendAttachmentPoints(annot, &quad)) {
+      FPDFPage_CloseAnnot(annot);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_ATTACHMENT_FAILED);
+      return 0;
+    }
+  }
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_annotation_color(uintptr_t handle,
+                                  int page_index,
+                                  int annotation_index,
+                                  uint32_t rgba) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (annotation_index < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, annotation_index);
+  if (!annot) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  unsigned int r = 0;
+  unsigned int g = 0;
+  unsigned int b = 0;
+  unsigned int a = 0;
+  SplitRgba(rgba, &r, &g, &b, &a);
+  if (!FPDFAnnot_SetColor(annot, FPDFANNOT_COLORTYPE_Color, r, g, b, a)) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_COLOR_FAILED);
+    return 0;
+  }
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_annotation_text(uintptr_t handle,
+                                 int page_index,
+                                 int annotation_index,
+                                 const char* contents_utf8) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (annotation_index < 0 || !contents_utf8) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  std::u16string contents_utf16;
+  if (!DecodeUtf8ToUtf16(contents_utf8, &contents_utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, annotation_index);
+  if (!annot) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!FPDFAnnot_SetStringValue(
+          annot,
+          "Contents",
+          reinterpret_cast<const unsigned short*>(contents_utf16.c_str()))) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_TEXT_FAILED);
+    return 0;
+  }
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_set_annotation_uri(uintptr_t handle,
+                                int page_index,
+                                int annotation_index,
+                                const char* uri) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (annotation_index < 0 || !IsAsciiString(uri)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, annotation_index);
+  if (!annot) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (FPDFAnnot_GetSubtype(annot) != FPDF_ANNOT_LINK) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!FPDFAnnot_SetURI(annot, uri)) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_URI_FAILED);
+    return 0;
+  }
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
 int wasm_pdf_page_object_count(uintptr_t handle, int page_index) {
   if (!g_pdfium_initialized) {
     SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
