@@ -29,6 +29,7 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Moves selected page objects/images/annotations by dragging directly on the canvas, with buttons, or with arrow-key nudge.
 - Constrains drag movement to the dominant axis while holding Shift.
 - Shows snap guides while dragging near page edges, page centers, and nearby selectable item edges/centers.
+- Shows live mouse PDF coordinates, selected bounds, and current drag/resize geometry in the document panel.
 - Duplicates selected text page objects with a small offset and selects the duplicates.
 - Resizes selected page objects/images by dragging selection handles in Object mode.
 - Resizes selected annotation rectangles by dragging selection handles in Annotation mode.
@@ -76,6 +77,7 @@ http://localhost:8080/examples/editor-mode/
 - Drag-to-move starts in Object mode on page objects/images or in Annotation mode on annotations. Dragging empty space still performs area selection.
 - Shift-drag axis locking and snap guides only apply to direct canvas movement for selected page objects/images/annotations.
 - Snap guides use a small PDF-space threshold and snap selected bounds against page margins, page center lines, and nearby selectable item bounds.
+- Live editor metrics report PDF-space mouse coordinates, aggregate selected bounds, move deltas, and resize bounds in points.
 - Duplicate support currently applies to text page objects only. Image/path/form object duplication needs broader native clone support.
 - The floating toolbar uses inline SVG icons, browser-native tooltips, and accessible labels without adding a runtime icon dependency.
 - The floating toolbar uses the same move delta inputs as the Move Items panel. Its grow/shrink actions resize one selected page object, image, or annotation around its center.
@@ -103,8 +105,8 @@ http://localhost:8080/examples/editor-mode/
 - Add annotation creation from the editor toolbar.
 - Add image placement mode with upload, click placement, and drag rectangle placement.
 - Add keyboard nudge variants: Arrow = 1 pt, Shift+Arrow = 10 pt, Alt/Option+Arrow = 0.25 pt.
+- Add visible mouse PDF coordinates and selected bounds while moving/resizing.
 
 ## Next Actions
 
-- Add visible mouse PDF coordinates and selected bounds while moving/resizing.
 - Replace full-PDF snapshot undo with operation-based undo once editor mutations become more granular.
