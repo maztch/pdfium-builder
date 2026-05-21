@@ -260,6 +260,13 @@ Add a generic inspector panel showing:
 
 Initial inspector can be read-only. Later, it becomes the edit panel for each item type.
 
+Implementation status:
+
+- Added `examples/shared/selection-inspector.js` as a reusable read-only inspector for normalized selectable items.
+- Added a Selected Item panel to the full workbench.
+- Inspector shows generic item type, page, index, key, bounds, and item-specific text, page-object/image, annotation, and form-widget metadata.
+- Multi-selection shows a compact selected item list.
+
 ### 10) Add Keyboard Shortcuts
 
 Initial shortcuts:
