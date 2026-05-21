@@ -526,6 +526,8 @@ async function main() {
       doc.addTextNoteAnnotation(0, { x: 235, y: 310, contents: 'Direct note', rgba: 0xffffff00 });
       doc.addFreeTextAnnotation(0, { left: 44, bottom: 340, right: 230, top: 380 }, { contents: 'Direct FreeText', fontSize: 12, textRgba: 0xff000000, borderRgba: 0xff336699, borderWidth: 1 });
       assert.equal(doc.annotationCount(0), 5, 'direct API annotation creation helpers should add annotations');
+      assert.equal(doc.annotationInfo(0, 3).contents, 'Direct note', 'direct API text note helper should save contents');
+      assert.equal(doc.annotationInfo(0, 4).contents, 'Direct FreeText', 'direct API FreeText helper should save visible text contents');
       doc.updateAnnotation(0, 0, {
         rect: { left: 48, bottom: 252, right: 152, top: 312 },
         color: 0xff669933,

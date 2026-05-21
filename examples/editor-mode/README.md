@@ -25,6 +25,7 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Edits selected page object/image X, Y, width, and height from the object geometry panel.
 - Edits selected annotation rectangle, color, border width, text, and URI from the annotation editor panel.
 - Creates highlight, rectangle, text note, FreeText, and link annotations from the sidebar panel or floating toolbar using selection bounds or the Add Text rectangle.
+- Inserts browser-decoded images using numeric placement, empty Object-mode clicks, or empty Object-mode drag rectangles.
 - Moves selected page objects/images/annotations by dragging directly on the canvas, with buttons, or with arrow-key nudge.
 - Constrains drag movement to the dominant axis while holding Shift.
 - Shows snap guides while dragging near page edges, page centers, and nearby selectable item edges/centers.
@@ -70,6 +71,8 @@ http://localhost:8080/examples/editor-mode/
 - Annotation resize updates annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation property edits call `updateAnnotation()` with `rect`, `rgba`, `borderWidth`, `contents`, and `uri` as applicable.
 - Annotation creation uses direct API helpers for highlight, rectangle, text note, FreeText, and link annotations. New annotations are selected after page refresh when possible.
+- FreeText is the default create type because it renders visible editable text on the page. Highlight, rectangle, and link annotations save the Text / contents value as annotation `Contents`, but that content is metadata/popup text rather than visible page text.
+- Image insertion uses `createDecodedImagePayload()` and `addRgbaImage()`. Empty clicks in Object mode set the image origin, and empty drag rectangles set exact image bounds before insertion.
 - Drag-to-move starts in Object mode on page objects/images or in Annotation mode on annotations. Dragging empty space still performs area selection.
 - Shift-drag axis locking and snap guides only apply to direct canvas movement for selected page objects/images/annotations.
 - Snap guides use a small PDF-space threshold and snap selected bounds against page margins, page center lines, and nearby selectable item bounds.
@@ -98,10 +101,10 @@ http://localhost:8080/examples/editor-mode/
 - Add selection grouping and a multi-select inspector with bounds, counts, and available actions.
 - Add inline text object replacement for content, font, size, and color.
 - Add annotation creation from the editor toolbar.
+- Add image placement mode with upload, click placement, and drag rectangle placement.
 
 ## Next Actions
 
-- Add image placement mode with upload, click placement, and drag rectangle placement.
 - Add keyboard nudge variants: Arrow = 1 pt, Shift+Arrow = 10 pt, Alt/Option+Arrow = 0.25 pt.
 - Add visible mouse PDF coordinates and selected bounds while moving/resizing.
 - Replace full-PDF snapshot undo with operation-based undo once editor mutations become more granular.
