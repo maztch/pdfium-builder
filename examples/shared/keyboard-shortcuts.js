@@ -42,7 +42,7 @@ export function keyboardShortcutFromEvent(event) {
   }
 
   if (ARROW_DELTAS[key]) {
-    const multiplier = event.shiftKey ? 10 : 1;
+    const multiplier = event.altKey ? 0.25 : event.shiftKey ? 10 : 1;
     return {
       action: KEYBOARD_ACTIONS.NUDGE,
       preventDefault: true,

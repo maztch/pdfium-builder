@@ -102,9 +102,9 @@ http://localhost:8080/examples/editor-mode/
 - Add inline text object replacement for content, font, size, and color.
 - Add annotation creation from the editor toolbar.
 - Add image placement mode with upload, click placement, and drag rectangle placement.
+- Add keyboard nudge variants: Arrow = 1 pt, Shift+Arrow = 10 pt, Alt/Option+Arrow = 0.25 pt.
 
 ## Next Actions
 
-- Add keyboard nudge variants: Arrow = 1 pt, Shift+Arrow = 10 pt, Alt/Option+Arrow = 0.25 pt.
 - Add visible mouse PDF coordinates and selected bounds while moving/resizing.
 - Replace full-PDF snapshot undo with operation-based undo once editor mutations become more granular.
