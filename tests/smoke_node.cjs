@@ -509,6 +509,10 @@ async function main() {
         },
         'direct API duplicatePageObject should apply the requested offset'
       );
+      const objectCountBeforeReplace = doc.pageObjectCount(0);
+      doc.replaceTextPageObject(0, duplicateIndex, 'Direct replacement text');
+      assert.equal(doc.pageObjectCount(0), objectCountBeforeReplace, 'direct API replaceTextPageObject should preserve object count');
+      assert.match(doc.pageText(0), /Direct replacement text/, 'direct API replaceTextPageObject should update page text');
       assert.throws(
         () => doc.duplicatePageObject(0, imageObject.index),
         (error) => error instanceof PdfiumApiError && error.code === 63,

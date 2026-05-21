@@ -20,7 +20,9 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Sets add-text coordinates by clicking empty page space in Text mode.
 - Sets add-text box bounds by dragging an empty rectangle in Text mode.
 - Shows a selected item inspector, including multi-select counts, bounds, and available actions.
-- Replaces selected text page objects with edited content, font, size, and color.
+- Replaces selected text page objects with edited content while preserving original font and size when the native replacement API is available.
+- Edits text in place by double-clicking text page objects, text runs that resolve to page objects, or FreeText annotations.
+- Grows the in-place text editor with typed content instead of showing internal scrollbars.
 - Shows an accessible icon-only floating selection toolbar near the selected item with copy, delete, move, resize, and edit-focus actions.
 - Edits selected page object/image X, Y, width, and height from the object geometry panel.
 - Edits selected annotation rectangle, color, border width, text, and URI from the annotation editor panel.
@@ -67,7 +69,9 @@ http://localhost:8080/examples/editor-mode/
 - Page object and image moves apply `transformPageObject()` translation matrices.
 - Page object and image resize also applies `transformPageObject()` with scale/translate matrices based on the dragged handle.
 - Object geometry edits apply `transformPageObject()` with a scale/translate matrix derived from the selected object's current PDF-space rectangle and the requested X/Y/width/height.
-- Text object edits infer current text from overlapping text runs, delete the selected text page object, and insert a replacement text box at the same bounds.
+- Text object edits infer current text from overlapping text runs. Native replacement preserves the original PDF font handle and font size; older builds fall back to deleting the selected text page object and inserting a replacement text box at the same bounds.
+- In-place text edits use the same preservation path for text page objects. FreeText in-place edits update annotation contents through `updateAnnotation()`.
+- The in-place editor uses a `contenteditable` overlay so long edits expand naturally in width/height while preserving plain text on commit.
 - Annotation moves update annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation resize updates annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation property edits call `updateAnnotation()` with `rect`, `rgba`, `borderWidth`, `contents`, and `uri` as applicable.
@@ -106,6 +110,7 @@ http://localhost:8080/examples/editor-mode/
 - Add image placement mode with upload, click placement, and drag rectangle placement.
 - Add keyboard nudge variants: Arrow = 1 pt, Shift+Arrow = 10 pt, Alt/Option+Arrow = 0.25 pt.
 - Add visible mouse PDF coordinates and selected bounds while moving/resizing.
+- Add double-click in-place text editing for text page objects and FreeText annotations.
 
 ## Next Actions
 

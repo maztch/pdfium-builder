@@ -3756,6 +3756,174 @@ int wasm_pdf_delete_page_object(uintptr_t handle, int page_index, int object_ind
   return 1;
 }
 
+int wasm_pdf_replace_text_page_object(uintptr_t handle,
+                                      int page_index,
+                                      int object_index,
+                                      const char* text_utf8) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (object_index < 0 || !text_utf8) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  std::u16string utf16;
+  if (!DecodeUtf8ToUtf16(text_utf8, &utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  if (object_count < 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+  if (object_index >= object_count) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, object_index);
+  if (!object || FPDFPageObj_GetType(object) != FPDF_PAGEOBJ_TEXT) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+
+  FPDF_FONT font = FPDFTextObj_GetFont(object);
+  float font_size = 0;
+  if (!font || !FPDFTextObj_GetFontSize(object, &font_size) || font_size <= 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return 0;
+  }
+
+  float object_left = 0;
+  float object_bottom = 0;
+  float object_right = 0;
+  float object_top = 0;
+  if (!FPDFPageObj_GetBounds(object,
+                             &object_left,
+                             &object_bottom,
+                             &object_right,
+                             &object_top)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_BOUNDS_FAILED);
+    return 0;
+  }
+
+  unsigned int r = 0;
+  unsigned int g = 0;
+  unsigned int b = 0;
+  unsigned int a = 255;
+  FPDFPageObj_GetFillColor(object, &r, &g, &b, &a);
+
+  std::vector<std::u16string> lines;
+  std::u16string current_line;
+  for (size_t i = 0; i < utf16.size(); ++i) {
+    const char16_t value = utf16[i];
+    if (IsUtf16LineBreak(value)) {
+      lines.push_back(current_line);
+      current_line.clear();
+      if (value == u'\r' && i + 1 < utf16.size() && utf16[i + 1] == u'\n') {
+        ++i;
+      }
+    } else {
+      current_line.push_back(value);
+    }
+  }
+  lines.push_back(current_line);
+
+  const double line_height = static_cast<double>(font_size) * 1.2;
+  int inserted_count = 0;
+  int visual_line_index = 0;
+  for (const std::u16string& line : lines) {
+    const double baseline_offset = visual_line_index * line_height;
+    ++visual_line_index;
+    if (line.empty()) {
+      continue;
+    }
+
+    FPDF_PAGEOBJECT replacement =
+        FPDFPageObj_CreateTextObj(doc, font, font_size);
+    if (!replacement) {
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_CREATE_TEXT_FAILED);
+      return 0;
+    }
+
+    if (!FPDFText_SetText(
+            replacement, reinterpret_cast<const unsigned short*>(line.c_str()))) {
+      FPDFPageObj_Destroy(replacement);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_SET_TEXT_FAILED);
+      return 0;
+    }
+
+    if (!FPDFPageObj_SetFillColor(replacement, r, g, b, a)) {
+      FPDFPageObj_Destroy(replacement);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_SET_COLOR_FAILED);
+      return 0;
+    }
+
+    FPDFPageObj_Transform(replacement,
+                          1,
+                          0,
+                          0,
+                          1,
+                          object_left,
+                          static_cast<float>(object_bottom - baseline_offset));
+
+    if (!FPDFPage_InsertObject(page, replacement)) {
+      FPDFPageObj_Destroy(replacement);
+      FPDF_ClosePage(page);
+      SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
+      return 0;
+    }
+    ++inserted_count;
+  }
+
+  if (inserted_count == 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!FPDFPage_RemoveObject(page, object)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED);
+    return 0;
+  }
+  FPDFPageObj_Destroy(object);
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return 0;
+  }
+
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
 int wasm_pdf_transform_page_object(uintptr_t handle,
                                    int page_index,
                                    int object_index,

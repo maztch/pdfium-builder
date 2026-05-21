@@ -958,6 +958,21 @@ export class PdfDocument {
     return this;
   }
 
+  replaceTextPageObject(pageIndex, objectIndex, text = "") {
+    this.assertOpen();
+    if (typeof this.mod._wasm_pdf_replace_text_page_object !== "function") {
+      throw new PdfiumApiError("This PDFium WASM build does not expose text object replacement", 2);
+    }
+    this.call(
+      "wasm_pdf_replace_text_page_object",
+      "number",
+      ["number", "number", "number", "string"],
+      [this.handle, pageIndex, objectIndex, text],
+      "Unable to replace text page object"
+    );
+    return this;
+  }
+
   deleteAnnotation(pageIndex, annotationIndex) {
     this.call(
       "wasm_pdf_delete_annotation",

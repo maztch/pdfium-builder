@@ -207,8 +207,9 @@ Redaction note: this build does not expose PDFium's apply-redactions API. `wasm_
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object and regenerates page content.
 - `wasm_pdf_transform_page_object(handle, pageIndex, objectIndex, a, b, c, d, e, f)` applies an affine matrix and regenerates page content.
 - `wasm_pdf_duplicate_page_object(handle, pageIndex, objectIndex, offsetX, offsetY)` duplicates a supported page object and returns the new object index, or `-1` on failure. Current native support is intentionally limited to text page objects because PDFium does not expose a generic public clone API for all object types.
+- `wasm_pdf_replace_text_page_object(handle, pageIndex, objectIndex, text)` replaces a text page object's contents while preserving the original PDF font handle, font size, and fill color. It regenerates page content and returns `1` on success or `0` on failure.
 
-The direct ES module wraps these as `doc.pageObjectCount(pageIndex)`, `doc.pageObjectInfo(pageIndex, objectIndex)`, `doc.pageObjects(pageIndex)`, `doc.deletePageObject(pageIndex, objectIndex)`, `doc.transformPageObject(pageIndex, objectIndex, matrix)`, and `doc.duplicatePageObject(pageIndex, objectIndex, { offsetX, offsetY })`. Direct page object records include `kind: "pageObject"`, `pageIndex`, `key`, `label`, `typeName`, and a PDF user-space `rect`.
+The direct ES module wraps these as `doc.pageObjectCount(pageIndex)`, `doc.pageObjectInfo(pageIndex, objectIndex)`, `doc.pageObjects(pageIndex)`, `doc.deletePageObject(pageIndex, objectIndex)`, `doc.replaceTextPageObject(pageIndex, objectIndex, text)`, `doc.transformPageObject(pageIndex, objectIndex, matrix)`, and `doc.duplicatePageObject(pageIndex, objectIndex, { offsetX, offsetY })`. Direct page object records include `kind: "pageObject"`, `pageIndex`, `key`, `label`, `typeName`, and a PDF user-space `rect`.
 
 Page object types:
 
