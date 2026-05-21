@@ -276,14 +276,15 @@ Initial shortcuts:
 - arrow keys: nudge selected item later
 - `Shift + arrow`: larger nudge later
 - `Cmd/Ctrl + S`: save
-- `Cmd/Ctrl + Z`: undo later
-- `Cmd/Ctrl + Shift + Z`: redo later
+- `Cmd/Ctrl + Z`: undo
+- `Cmd/Ctrl + Shift + Z`: redo
 
 Implementation status:
 
 - Added `examples/shared/keyboard-shortcuts.js` for shortcut classification and editable-target filtering.
 - Full workbench handles `Escape`, `Delete`/`Backspace`, and `Cmd/Ctrl+S` with active behavior.
-- Full workbench handles arrow-key nudge and `Cmd/Ctrl+Z`/`Cmd/Ctrl+Shift+Z` with explicit planned-feature status messages until transform/history support lands.
+- Full workbench handles arrow-key nudge with explicit planned-feature status messages until transform support lands.
+- Full workbench handles `Cmd/Ctrl+Z`/`Cmd/Ctrl+Shift+Z` through snapshot-based undo/redo.
 - Added visible shortcut help to the Editor Mode panel.
 
 ### 11) Define Mutation Refresh Rules
@@ -346,6 +347,14 @@ Suggested mode bar:
 - Area
 
 The specialized panels should react to the selected item.
+
+Implementation status:
+
+- Integrated the shared editor stack into `examples/full-viewer-workbench/` with a persistent editor mode bar for Pan, Text, Object, Annotation, Form widget, and Area modes.
+- The workbench now uses direct high-level APIs for text, page objects/images, annotations, form widgets, page management, page geometry, metadata, attachments, image insertion, redaction, rendering, and saving.
+- The Selected Item panel reacts to normalized selections across text, page objects/images, annotations, and form widgets.
+- Form-widget selection syncs the Forms panel to the selected field, and double-clicking items opens the closest specialized panel.
+- The workbench includes mutation refresh rules, selection reconciliation, delete support for selected annotations/page objects/images, and snapshot-based undo/redo.
 
 ## Recommended Implementation Order
 

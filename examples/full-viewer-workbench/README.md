@@ -15,6 +15,8 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Refreshes normalized current-page selectable items with `getSelectableItems()`.
 - Click-selects selectable text, page objects/images, annotations, and form widgets by active editor mode.
 - Drag-selects selectable items with a rubber-band rectangle; hold `Shift` to add to the existing selection.
+- Double-clicks selected items into the closest specialized panel, including text, images, annotations/page objects, and form widgets.
+- Syncs selected form widgets into the Forms panel for field editing.
 - Renders selection overlays independently from PDF rendering, including hover boxes, selected boxes, text highlights, resize handles, drag ghosts, and area marquees.
 - Shows a read-only selected item inspector with type, page, bounds, text/content, and item-specific metadata.
 - Uses hover highlighting, double-click selection status, `Escape` to clear selection, `Cmd/Ctrl+S` to save, `Delete`/`Backspace` to delete selected annotations/page objects/images, arrows for planned nudge feedback, and `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` for undo/redo.
@@ -61,12 +63,12 @@ http://localhost:8080/examples/full-viewer-workbench/
 - The selected PDF and secondary import PDF stay local in the browser.
 - This sample uses the direct API on the main thread. Larger production apps should consider the worker API to avoid blocking UI during heavy renders/saves.
 - Redaction is object-level in this build and is not a full secure-redaction engine.
-- Annotation and page-object editing remain linked to focused samples because those examples currently expose lower-level/raw-call details that would make this first workbench too dense.
+- Deep annotation and page-object editing remain linked to focused samples to keep this first workbench usable.
 
 ## Next Improvements
 
-- Promote annotation listing/editing into direct `pdfium-api.js` helpers and embed it as a first-class tab.
-- Promote page-object enumeration/transforms into direct helpers and embed it as a first-class tab.
+- Add full annotation property editing as a first-class workbench panel.
+- Add page-object transform editing as a first-class workbench panel.
 - Add outline/bookmark parsing as a direct helper and include an outline navigation tab.
 - Add a worker-backed workbench variant for long-running operations.
 - Add shared example components to reduce repeated rendering, overlay, and save code across samples.
