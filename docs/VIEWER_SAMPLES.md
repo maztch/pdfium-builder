@@ -121,6 +121,7 @@ Standalone viewer samples preload `examples/demo.pdf` on startup and keep their 
 - Apply text redaction.
 - Save the result.
 - Clearly show the current limitation: redaction is object-level and not a full secure redaction engine for complex PDFs.
+- Initial sample: [`examples/redaction-demo/`](../examples/redaction-demo/).
 
 ## 15) Full Viewer Workbench
 
