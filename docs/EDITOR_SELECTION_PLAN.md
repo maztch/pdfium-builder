@@ -298,6 +298,14 @@ After any edit:
 
 PDFium object and annotation indexes can change after deletions/imports/saves, so identity must be treated as semi-stable until stronger IDs exist.
 
+Implementation status:
+
+- Added full workbench mutation refresh helpers for dirty marking, selectable-item refresh, optional side-data refresh, optional PDF re-rendering, and selection reconciliation.
+- Current mutation flows route through the refresh helper: metadata, redaction, text insertion, page mutations, image insertion, attachment add/update/delete, form value changes, and selected item deletion.
+- Non-visual document edits refresh side data/selectables without re-rendering the page canvas.
+- Visual edits re-render the page, then reconcile selection by normalized item key.
+- Deleted selected annotations/page objects/images explicitly clear selection to avoid index-shift false identity matches.
+
 ### 12) Add Undo/Redo Foundation
 
 Before adding broad element editing, define undo/redo.
