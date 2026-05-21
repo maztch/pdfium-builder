@@ -43,6 +43,7 @@ http://localhost:8080/examples/page-management/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDFs stay local in the browser.
+- The sample preloads `../demo.pdf` on startup. Use the file input to replace it.
 - This sample uses the direct API on the main thread.
 - The direct wrapper already exposes high-level insert/delete/rotate/resize methods. Copy/import are called through small local helpers around the exported native functions.
 - Import page ranges use PDFium's one-based range format, for example `1,3,5-7`. Leave the range empty to import all pages.

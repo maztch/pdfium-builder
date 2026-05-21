@@ -43,6 +43,7 @@ http://localhost:8080/examples/image-insertion/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDF and image stay local in the browser.
+- The sample preloads `../demo.pdf` on startup. Use the file input to replace it.
 - The sample uses browser decoding, so PNG, JPEG, WebP, and other browser-supported formats can be converted to RGBA before insertion.
 - PDF coordinates use a bottom-left origin; canvas coordinates use a top-left origin. Clicking the canvas maps the click to PDF-space placement.
 

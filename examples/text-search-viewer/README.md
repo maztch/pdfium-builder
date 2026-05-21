@@ -45,6 +45,7 @@ http://localhost:8080/examples/text-search-viewer/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDF stays local in the browser.
+- The sample preloads `../demo.pdf` on startup. Use the file input to replace it.
 - This sample uses the direct API on the main thread.
 - PDF coordinates use a bottom-left origin; canvas coordinates use a top-left origin. The sample uses `pdfRectToCanvasRect()` to convert search rectangles for overlays.
 

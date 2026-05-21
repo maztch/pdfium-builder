@@ -12,6 +12,8 @@ npm run examples
 
 Then open the sample URL shown below.
 
+Standalone browser samples preload [`demo.pdf`](demo.pdf) on startup. Use the PDF file input in each sample to replace it with another local file.
+
 ## Samples
 
 | Sample | Type | Summary | Run |
@@ -22,11 +24,15 @@ Then open the sample URL shown below.
 | [`annotation-workbench/`](annotation-workbench/) | Browser page | Lists, overlays, adds, updates, deletes, renders, and saves annotations. | `http://localhost:8080/examples/annotation-workbench/` |
 | [`image-insertion/`](image-insertion/) | Browser page | Uploads a browser image, previews placement, inserts it into the PDF, and saves changes. | `http://localhost:8080/examples/image-insertion/` |
 | [`page-management/`](page-management/) | Browser page | Inserts, deletes, duplicates, imports, rotates, resizes, renders, and saves pages. | `http://localhost:8080/examples/page-management/` |
+| [`page-geometry/`](page-geometry/) | Browser page | Visualizes and edits media/crop/bleed/trim/art boxes and page size. | `http://localhost:8080/examples/page-geometry/` |
+| [`page-object-inspector/`](page-object-inspector/) | Browser page | Lists page objects, overlays bounds, transforms/deletes objects, and saves changes. | `http://localhost:8080/examples/page-object-inspector/` |
+| [`metadata-outline/`](metadata-outline/) | Browser page | Views/edits metadata, lists outline/bookmarks, navigates destinations, and saves changes. | `http://localhost:8080/examples/metadata-outline/` |
 | [`browser-add-text/`](browser-add-text/) | Browser module helper | Exports `addTextToPdf(inputBytes, text)` for adding text to page 1 and returning saved PDF bytes. | Import `examples/browser-add-text/index.js` from a browser page or bundler entry. |
 
 ## Requirements
 
 - Build `dist/pdfium.js` and `dist/pdfium.wasm` first with `./scripts/build_wrapper_wasm.sh`.
+- Keep `examples/demo.pdf` available if you want the automatic preload behavior.
 - Serve the repository root, not just `examples/`, because examples import `../../pdfium-api.js` and load `../../dist/pdfium.wasm`.
 - Use a modern browser with ES module and WebAssembly support.
 - `npm run examples` uses `npx http-server`; it may download the package the first time.

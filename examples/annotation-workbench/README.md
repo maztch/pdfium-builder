@@ -51,6 +51,7 @@ http://localhost:8080/examples/annotation-workbench/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDF stays local in the browser.
+- The sample preloads `../demo.pdf` on startup. Use the file input to replace it.
 - This sample uses the direct API on the main thread.
 - Link annotation URIs must be non-empty 7-bit ASCII.
 - FreeText annotations regenerate an appearance stream when created. Updating FreeText contents updates the annotation contents; viewer appearance behavior depends on PDFium support and the PDF viewer.

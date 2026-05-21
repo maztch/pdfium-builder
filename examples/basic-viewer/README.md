@@ -41,6 +41,7 @@ http://localhost:8080/examples/basic-viewer/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDF stays local in the browser.
+- The sample preloads `../demo.pdf` on startup. Use the file input to replace it.
 - This sample uses the direct API on the main thread. Later viewer samples can use `worker/pdfium-worker.js` for heavier operations.
 - Render flag `0x01` is enabled so annotations are included when PDFium renders the page.
 

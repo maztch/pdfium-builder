@@ -10,6 +10,8 @@ npm run examples
 
 Then open `http://localhost:8080/examples/basic-viewer/`.
 
+Standalone viewer samples preload `examples/demo.pdf` on startup and keep their file inputs available for replacing it.
+
 ## 1) Basic Viewer
 
 - Load a PDF from `<input type="file">`.
@@ -77,6 +79,7 @@ Then open `http://localhost:8080/examples/basic-viewer/`.
 - Visualize media, crop, bleed, trim, and art boxes.
 - Edit box values numerically.
 - Preview the resulting page crop/geometry.
+- Initial sample: [`examples/page-geometry/`](../examples/page-geometry/).
 
 ## 10) Page Object Inspector
 
@@ -84,12 +87,15 @@ Then open `http://localhost:8080/examples/basic-viewer/`.
 - Draw object bounds.
 - Delete selected page objects.
 - Transform selected objects with translate, scale, and matrix controls.
+- Initial sample: [`examples/page-object-inspector/`](../examples/page-object-inspector/).
 
-## 11) Metadata And Outline Viewer
+## 11) Metadata And Outline Viewer / Editor
 
 - Read and edit metadata fields.
 - Show outline/bookmark presence and tree data.
 - Navigate by outline items where destination data is available.
+- Keep outline editing read-only until outline write APIs exist.
+- Initial sample: [`examples/metadata-outline/`](../examples/metadata-outline/).
 
 ## 12) Attachments Panel
 

@@ -42,6 +42,7 @@ http://localhost:8080/examples/page-info-viewer/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDF stays local in the browser.
+- The sample preloads `../demo.pdf` on startup. Use the file input to replace it.
 - This sample uses the direct API on the main thread.
 - Permission labels are decoded from the standard PDF permission bit flags returned by PDFium.
 

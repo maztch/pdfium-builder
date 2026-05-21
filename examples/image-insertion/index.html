@@ -407,6 +407,21 @@
         renderPlacementOverlay();
       }
 
+
+      async function loadDemoPdf() {
+        try {
+          setStatus("Loading demo.pdf...");
+          const response = await fetch("../demo.pdf");
+          if (!response.ok) throw new Error(`Unable to fetch demo.pdf (${response.status})`);
+          const blob = await response.blob();
+          const file = new File([blob], "demo.pdf", { type: "application/pdf" });
+          await loadPdf(file);
+        } catch (error) {
+          console.warn(error);
+          setStatus("Demo PDF could not be loaded. Choose a PDF file manually.", true);
+        }
+      }
+
       elements.pdfInput.addEventListener("change", async () => { const [file] = elements.pdfInput.files; if (file) await loadPdf(file); });
       elements.imageInput.addEventListener("change", async () => { const [file] = elements.imageInput.files; if (file) await loadImage(file); });
       elements.prevButton.addEventListener("click", async () => { if (state.pageIndex > 0) { state.pageIndex -= 1; await renderCurrentPage(); } });
@@ -424,6 +439,7 @@
       window.addEventListener("beforeunload", () => { closeCurrentDocument(); if (state.api) state.api.destroy(); });
 
       updateControls();
+      loadDemoPdf();
     </script>
   </body>
 </html>
