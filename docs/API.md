@@ -207,6 +207,8 @@ Redaction note: this build does not expose PDFium's apply-redactions API. `wasm_
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object and regenerates page content.
 - `wasm_pdf_transform_page_object(handle, pageIndex, objectIndex, a, b, c, d, e, f)` applies an affine matrix and regenerates page content.
 
+The direct ES module wraps these as `doc.pageObjectCount(pageIndex)`, `doc.pageObjectInfo(pageIndex, objectIndex)`, `doc.pageObjects(pageIndex)`, `doc.deletePageObject(pageIndex, objectIndex)`, and `doc.transformPageObject(pageIndex, objectIndex, matrix)`. Direct page object records include `kind: "pageObject"`, `pageIndex`, `key`, `label`, `typeName`, and a PDF user-space `rect`.
+
 Page object types:
 
 - `0`: unknown

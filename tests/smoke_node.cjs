@@ -476,6 +476,27 @@ async function main() {
         displayWidth: 24,
         displayHeight: 24,
       });
+      const pageObjects = doc.pageObjects(0);
+      assert.equal(pageObjects.length, doc.pageObjectCount(0), 'direct API pageObjects should enumerate page object count');
+      const imageObject = pageObjects.find((object) => object.type === 3);
+      assert.ok(imageObject, 'direct API pageObjects should expose inserted image object');
+      assert.equal(imageObject.kind, 'pageObject', 'direct API page object should be selection-friendly');
+      assert.equal(imageObject.typeName, 'image', 'direct API page object type name should be readable');
+      assert.deepEqual(imageObject.rect, { left: 72, bottom: 160, right: 96, top: 184 }, 'direct API page object bounds should match inserted image');
+      assert.throws(
+        () => doc.transformPageObject(0, imageObject.index, [0, 0, 0, 0, 0, 0]),
+        (error) => error instanceof PdfiumApiError && error.code === 2,
+        'direct API transformPageObject should report invalid matrix errors'
+      );
+      doc.transformPageObject(0, imageObject.index, { a: 1, b: 0, c: 0, d: 1, e: 8, f: 10 });
+      assert.deepEqual(
+        doc.pageObjectInfo(0, imageObject.index).rect,
+        { left: 80, bottom: 170, right: 104, top: 194 },
+        'direct API transformPageObject should update object bounds'
+      );
+      const objectCountBeforeDelete = doc.pageObjectCount(0);
+      doc.deletePageObject(0, imageObject.index);
+      assert.equal(doc.pageObjectCount(0), objectCountBeforeDelete - 1, 'direct API deletePageObject should remove one object');
       assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
       assert.match(doc.pageText(0), /Direct[\r\n]+wrapped/, 'direct API pageText should read wrapped inserted text');
       if (typeof directApi.mod._wasm_pdf_get_page_text_runs === 'function') {

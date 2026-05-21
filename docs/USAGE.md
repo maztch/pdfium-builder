@@ -52,7 +52,7 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete/copy/import, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete/copy/import, page rotation/boxes/size, page object enumeration/transforms/deletion, RGBA image insertion, browser image decoding to RGBA, and page rendering.
 
 Wrapped text insertion:
 
@@ -103,6 +103,23 @@ await pdfium.withDocument(inputBytes, (doc) => {
 ```
 
 `pageTextRuns()` currently returns visible character-level runs with PDF user-space rectangles. This is intended for viewer hit testing and selection overlays.
+
+Page object selection/editing:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const objects = doc.pageObjects(0);
+  const image = objects.find((object) => object.typeName === "image");
+
+  if (image) {
+    doc.transformPageObject(0, image.index, { a: 1, b: 0, c: 0, d: 1, e: 12, f: 18 });
+  }
+
+  return doc.save();
+});
+```
+
+`pageObjects()` returns selection-friendly records with `kind`, `key`, `label`, `pageIndex`, `typeName`, and `rect`. Use `pageObjectInfo(pageIndex, objectIndex)` for one object, `pageObjectCount(pageIndex)` for counts, and `deletePageObject(pageIndex, objectIndex)` to remove a content object.
 
 Basic AcroForm usage:
 

@@ -124,6 +124,12 @@ Add direct helpers:
 - `doc.deletePageObject(pageIndex, objectIndex)`
 - `doc.transformPageObject(pageIndex, objectIndex, matrix)`
 
+Implementation status:
+
+- Added all five direct `pdfium-api.js` helpers.
+- `pageObjects()` returns selection-friendly records with `kind`, `key`, `label`, `pageIndex`, `typeName`, and `rect`.
+- Added smoke coverage for direct object enumeration, info, invalid transform errors, valid transform bounds, and deletion.
+
 Use existing worker/native behavior as the reference.
 
 ### 5) Promote Annotation Helpers To Direct API

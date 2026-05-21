@@ -66,6 +66,13 @@ export const PDFIUM_ERROR_NAMES = Object.freeze({
   62: "text_layout_failed",
 });
 
+export const PAGE_OBJECT_TYPE_NAMES = Object.freeze({
+  0: "unknown",
+  1: "text",
+  2: "path",
+  3: "image",
+});
+
 export class PdfiumApiError extends Error {
   constructor(message, code = 0) {
     super(message);
@@ -267,6 +274,21 @@ function parseTextRuns(bytes) {
   }
 
   return runs;
+}
+
+function pageObjectLabel(type, index) {
+  const name = PAGE_OBJECT_TYPE_NAMES[type] || PAGE_OBJECT_TYPE_NAMES[0];
+  return `${name[0].toUpperCase()}${name.slice(1)} object ${index}`;
+}
+
+function normalizeMatrix(matrix = {}) {
+  if (Array.isArray(matrix)) {
+    const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = matrix;
+    return { a, b, c, d, e, f };
+  }
+
+  const { a = 1, b = 0, c = 0, d = 1, e = 0, f = 0 } = matrix;
+  return { a, b, c, d, e, f };
 }
 
 function parseAttachmentInfo(bytes, index) {
@@ -632,6 +654,90 @@ export class PdfDocument {
       pageIndex,
       key: `text:${pageIndex}:${run.index}`,
     }));
+  }
+
+  pageObjectCount(pageIndex = 0) {
+    this.assertOpen();
+    const count = this.mod.ccall("wasm_pdf_page_object_count", "number", ["number", "number"], [this.handle, pageIndex]);
+    if (count < 0) this.api.throwLastError("Unable to count page objects");
+    return count;
+  }
+
+  pageObjectInfo(pageIndex = 0, objectIndex = 0) {
+    this.assertOpen();
+    let typePtr = 0;
+
+    try {
+      typePtr = this.mod._malloc(4);
+      if (!typePtr) throw new PdfiumApiError("Unable to allocate page object type pointer", 3);
+
+      return this.withDoublePointers(4, ([leftPtr, bottomPtr, rightPtr, topPtr]) => {
+        const ok = this.mod.ccall(
+          "wasm_pdf_get_page_object_info",
+          "number",
+          ["number", "number", "number", "number", "number", "number", "number", "number"],
+          [this.handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+        );
+        if (!ok) this.api.throwLastError("Unable to query page object info");
+
+        const type = this.mod.getValue(typePtr, "i32");
+        const rect = {
+          left: this.mod.getValue(leftPtr, "double"),
+          bottom: this.mod.getValue(bottomPtr, "double"),
+          right: this.mod.getValue(rightPtr, "double"),
+          top: this.mod.getValue(topPtr, "double"),
+        };
+
+        return {
+          index: objectIndex,
+          pageIndex,
+          type,
+          typeName: PAGE_OBJECT_TYPE_NAMES[type] || PAGE_OBJECT_TYPE_NAMES[0],
+          rect,
+          left: rect.left,
+          bottom: rect.bottom,
+          right: rect.right,
+          top: rect.top,
+          kind: "pageObject",
+          label: pageObjectLabel(type, objectIndex),
+          key: `pageObject:${pageIndex}:${objectIndex}`,
+        };
+      });
+    } finally {
+      if (typePtr) this.mod._free(typePtr);
+    }
+  }
+
+  pageObjects(pageIndex = 0) {
+    const count = this.pageObjectCount(pageIndex);
+    const objects = [];
+    for (let index = 0; index < count; index += 1) {
+      objects.push(this.pageObjectInfo(pageIndex, index));
+    }
+    return objects;
+  }
+
+  deletePageObject(pageIndex, objectIndex) {
+    this.call(
+      "wasm_pdf_delete_page_object",
+      "number",
+      ["number", "number", "number"],
+      [this.handle, pageIndex, objectIndex],
+      "Unable to delete page object"
+    );
+    return this;
+  }
+
+  transformPageObject(pageIndex, objectIndex, matrix = {}) {
+    const { a, b, c, d, e, f } = normalizeMatrix(matrix);
+    this.call(
+      "wasm_pdf_transform_page_object",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number", "number", "number"],
+      [this.handle, pageIndex, objectIndex, a, b, c, d, e, f],
+      "Unable to transform page object"
+    );
+    return this;
   }
 
   searchPageText(pageIndex = 0, query = "", flags = 0) {

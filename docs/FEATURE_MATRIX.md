@@ -39,7 +39,7 @@ Status legend:
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Text redaction | `wasm_pdf_redact_page_text` | `redactPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker Protocol](WORKER_PROTOCOL.md#redactpagetext) | Partial | Removes intersecting text objects and paints cover rectangles; object-level limitation is documented. |
 | Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Worker returns subtype, flags, rect, color, border, contents, URI, and quadpoints. |
-| Page object count/info | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Used for object selection UIs. |
+| Page object count/info | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `pageObjectCount`, `pageObjectInfo`, and `pageObjects` for object selection UIs. |
 
 ## Page Mutations
 
@@ -69,9 +69,9 @@ Status legend:
 | Add JPEG image | `wasm_pdf_add_jpeg_image_page` | `addImage` with `imageFormat: "jpeg"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Uses PDFium's encoded JPEG image path. |
 | Add PNG image | `wasm_pdf_add_png_image_page` | `addImage` with `imageFormat: "png"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Supports common non-interlaced 8-bit PNGs. |
 | Browser-decoded image ingestion | `wasm_pdf_add_rgba_image_page` | `addImage` with decoded `rgbaBytes` | Yes | [Usage](USAGE.md#browser-image-decoding), [Examples](EXAMPLES.md#add-browser-decoded-images) | Stable | Uses `createImageBitmap` and canvas to convert browser-supported PNG/WebP/JPEG/etc. to RGBA before insertion. |
-| Enumerate page objects | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Returns object index, type, and bounds. |
-| Delete page object | `wasm_pdf_delete_page_object` | `deletePageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Regenerates page content after deletion. |
-| Transform page object | `wasm_pdf_transform_page_object` | `transformPageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Matrix must be invertible. |
+| Enumerate page objects | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API returns selection-friendly object records with index, type, type name, and bounds. |
+| Delete page object | `wasm_pdf_delete_page_object` | `deletePageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct and worker APIs regenerate page content after deletion. |
+| Transform page object | `wasm_pdf_transform_page_object` | `transformPageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API accepts object or array affine matrices; matrix must be invertible. |
 
 ## Annotations
 
