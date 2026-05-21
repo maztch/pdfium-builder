@@ -52,7 +52,7 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
 
 Wrapped text insertion:
 
@@ -104,6 +104,32 @@ await pdfium.withDocument(inputBytes, (doc) => {
   doc.setFormFieldChecked("agree", true);
   doc.setFormFieldChecked("choice", true, 1);
   doc.setFormFieldSelectedIndex("country", 2);
+  return doc.save();
+});
+```
+
+Embedded attachment usage:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const before = doc.attachments();
+  console.log(before.map((attachment) => attachment.name));
+
+  doc.addAttachment({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    fileBytes: new TextEncoder().encode("hello from an embedded file"),
+  });
+
+  const [attachment] = doc.attachments();
+  const read = doc.readAttachment(attachment.index);
+  console.log(new TextDecoder().decode(read.fileBytes));
+
+  doc.updateAttachment(attachment.index, {
+    mimeType: "text/plain",
+    fileBytes: new TextEncoder().encode("updated bytes"),
+  });
+
   return doc.save();
 });
 ```

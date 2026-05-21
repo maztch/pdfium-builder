@@ -27,6 +27,7 @@ Standalone browser samples preload [`demo.pdf`](demo.pdf) on startup. Use the PD
 | [`page-geometry/`](page-geometry/) | Browser page | Visualizes and edits media/crop/bleed/trim/art boxes and page size. | `http://localhost:8080/examples/page-geometry/` |
 | [`page-object-inspector/`](page-object-inspector/) | Browser page | Lists page objects, overlays bounds, transforms/deletes objects, and saves changes. | `http://localhost:8080/examples/page-object-inspector/` |
 | [`metadata-outline/`](metadata-outline/) | Browser page | Views/edits metadata, lists outline/bookmarks, navigates destinations, and saves changes. | `http://localhost:8080/examples/metadata-outline/` |
+| [`attachments-panel/`](attachments-panel/) | Browser page | Lists, downloads, adds, replaces, deletes, renders, and saves embedded attachments. | `http://localhost:8080/examples/attachments-panel/` |
 | [`browser-add-text/`](browser-add-text/) | Browser module helper | Exports `addTextToPdf(inputBytes, text)` for adding text to page 1 and returning saved PDF bytes. | Import `examples/browser-add-text/index.js` from a browser page or bundler entry. |
 
 ## Requirements

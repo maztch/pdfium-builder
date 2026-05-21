@@ -230,6 +230,34 @@ function parseSearchResults(bytes) {
   return matches;
 }
 
+function parseAttachmentInfo(bytes, index) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 0;
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = textDecoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  const name = readString();
+  const mimeType = readString();
+  const fileSize = view.getInt32(offset, true);
+  return {
+    index,
+    name,
+    mimeType: mimeType || null,
+    fileSize,
+  };
+}
+
 function parseFormFields(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const fields = [];
@@ -587,6 +615,112 @@ export class PdfDocument {
       "Unable to query form fields"
     );
     return parseFormFields(bytes);
+  }
+
+  attachmentCount() {
+    this.assertOpen();
+    const count = this.mod.ccall("wasm_pdf_attachment_count", "number", ["number"], [this.handle]);
+    if (count < 0) this.api.throwLastError("Unable to count attachments");
+    return count;
+  }
+
+  attachmentInfo(attachmentIndex) {
+    const bytes = this.outputBytes(
+      (outPtrPtr, outSizePtr) => this.mod.ccall(
+        "wasm_pdf_get_attachment_info",
+        "number",
+        ["number", "number", "number", "number"],
+        [this.handle, attachmentIndex, outPtrPtr, outSizePtr]
+      ),
+      "Unable to query attachment info"
+    );
+    return parseAttachmentInfo(bytes, attachmentIndex);
+  }
+
+  attachments() {
+    const count = this.attachmentCount();
+    const attachments = [];
+    for (let index = 0; index < count; index += 1) {
+      attachments.push(this.attachmentInfo(index));
+    }
+    return attachments;
+  }
+
+  readAttachment(attachmentIndex) {
+    const fileBytes = this.outputBytes(
+      (outPtrPtr, outSizePtr) => this.mod.ccall(
+        "wasm_pdf_get_attachment_file",
+        "number",
+        ["number", "number", "number", "number"],
+        [this.handle, attachmentIndex, outPtrPtr, outSizePtr]
+      ),
+      "Unable to read attachment file"
+    );
+    return {
+      ...this.attachmentInfo(attachmentIndex),
+      fileBytes,
+    };
+  }
+
+  addAttachment({ name = "", fileBytes = new Uint8Array(), mimeType = "" } = {}) {
+    this.assertOpen();
+    const bytes = asUint8Array(fileBytes, "fileBytes");
+    let filePtr = 0;
+
+    try {
+      if (bytes.length > 0) {
+        filePtr = this.mod._malloc(bytes.length);
+        if (!filePtr) throw new PdfiumApiError("Unable to allocate attachment file buffer", 3);
+        this.mod.HEAPU8.set(bytes, filePtr);
+      }
+
+      this.call(
+        "wasm_pdf_add_attachment",
+        "number",
+        ["number", "string", "number", "number", "string"],
+        [this.handle, name, filePtr, bytes.length, mimeType],
+        "Unable to add attachment"
+      );
+      return this;
+    } finally {
+      if (filePtr) this.mod._free(filePtr);
+    }
+  }
+
+  updateAttachment(attachmentIndex, { fileBytes = new Uint8Array(), mimeType = "" } = {}) {
+    this.assertOpen();
+    const bytes = asUint8Array(fileBytes, "fileBytes");
+    let filePtr = 0;
+
+    try {
+      if (bytes.length > 0) {
+        filePtr = this.mod._malloc(bytes.length);
+        if (!filePtr) throw new PdfiumApiError("Unable to allocate attachment file buffer", 3);
+        this.mod.HEAPU8.set(bytes, filePtr);
+      }
+
+      this.call(
+        "wasm_pdf_set_attachment_file",
+        "number",
+        ["number", "number", "number", "number", "string"],
+        [this.handle, attachmentIndex, filePtr, bytes.length, mimeType],
+        "Unable to update attachment"
+      );
+      return this;
+    } finally {
+      if (filePtr) this.mod._free(filePtr);
+    }
+  }
+
+  deleteAttachment(attachmentIndex) {
+    this.call(
+      "wasm_pdf_delete_attachment",
+      "number",
+      ["number", "number"],
+      [this.handle, attachmentIndex],
+      "Unable to delete attachment"
+    );
+    return this;
   }
 
   setFormFieldValue(name, value) {

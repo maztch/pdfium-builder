@@ -103,6 +103,8 @@ Standalone viewer samples preload `examples/demo.pdf` on startup and keep their 
 - Download attachment bytes.
 - Add new attachments.
 - Replace or delete existing attachments.
+- Save the modified PDF.
+- Initial sample: [`examples/attachments-panel/`](../examples/attachments-panel/).
 
 ## 13) Forms Demo
 

@@ -403,6 +403,40 @@ async function main() {
       assert.equal(doc.pageCount(), 1, 'direct API deletePage should remove a page');
       doc.setMetadata('Title', 'Direct wrapper title');
       assert.equal(doc.metadata('Title'), 'Direct wrapper title', 'direct API metadata should round-trip');
+      assert.equal(doc.attachmentCount(), 0, 'direct API attachmentCount should start empty');
+      doc.addAttachment({
+        name: 'direct-notes.txt',
+        mimeType: 'text/plain',
+        fileBytes: new TextEncoder().encode('direct attachment bytes'),
+      });
+      assert.equal(doc.attachmentCount(), 1, 'direct API addAttachment should add an embedded file');
+      assert.deepEqual(
+        doc.attachments().map((attachment) => [attachment.index, attachment.name, attachment.mimeType, attachment.fileSize]),
+        [[0, 'direct-notes.txt', 'text/plain', 'direct attachment bytes'.length]],
+        'direct API attachments should list embedded file metadata'
+      );
+      assert.equal(
+        new TextDecoder().decode(doc.readAttachment(0).fileBytes),
+        'direct attachment bytes',
+        'direct API readAttachment should read embedded file bytes'
+      );
+      doc.updateAttachment(0, {
+        mimeType: 'application/octet-stream',
+        fileBytes: new TextEncoder().encode('updated direct attachment bytes'),
+      });
+      assert.equal(doc.attachmentInfo(0).mimeType, 'application/octet-stream', 'direct API updateAttachment should update MIME type');
+      assert.equal(
+        new TextDecoder().decode(doc.readAttachment(0).fileBytes),
+        'updated direct attachment bytes',
+        'direct API updateAttachment should update embedded file bytes'
+      );
+      doc.addAttachment({
+        name: 'temporary.txt',
+        mimeType: 'text/plain',
+        fileBytes: new TextEncoder().encode('temporary attachment'),
+      });
+      doc.deleteAttachment(1);
+      assert.equal(doc.attachmentCount(), 1, 'direct API deleteAttachment should remove an embedded file');
       doc.addText({ pageIndex: 0, text: 'Direct wrapper text', x: 72, y: 120, fontSize: 12, rgba: 0xff111111 });
       const directTextBoxLines = doc.addTextBox({
         pageIndex: 0,
@@ -442,6 +476,16 @@ async function main() {
       return doc.save();
     });
     assert.equal(Buffer.from(directOutput.subarray(0, 5)).toString('ascii'), '%PDF-', 'direct API save should return PDF bytes');
+
+    await directApi.withDocument(directOutput, (doc) => {
+      assert.equal(doc.attachmentCount(), 1, 'direct API attachments should persist after reopen');
+      assert.equal(doc.attachmentInfo(0).name, 'direct-notes.txt', 'direct API attachment name should persist after reopen');
+      assert.equal(
+        new TextDecoder().decode(doc.readAttachment(0).fileBytes),
+        'updated direct attachment bytes',
+        'direct API updated attachment bytes should persist after reopen'
+      );
+    });
 
     await assert.rejects(
       directApi.withDocument(createMinimalPdf(), (doc) => doc.deletePage(9)),

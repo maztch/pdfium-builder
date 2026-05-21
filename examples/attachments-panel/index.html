@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Attachments Panel</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1d2433;
+        --muted: #667085;
+        --line: #d8deea;
+        --panel: rgba(255, 255, 255, 0.88);
+        --accent: #b45309;
+        --accent-soft: #fef3c7;
+        --ok: #047857;
+        --danger: #b42318;
+        --danger-soft: #fee4e2;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; color: var(--ink); font-family: ui-serif, Georgia, "Times New Roman", serif; background: radial-gradient(circle at 10% 8%, rgba(180, 83, 9, 0.2), transparent 29rem), radial-gradient(circle at 92% 16%, rgba(4, 120, 87, 0.15), transparent 27rem), linear-gradient(135deg, #fffbeb 0%, #f0fdf4 100%); }
+      .shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+      header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); }
+      h1, h2, h3 { margin: 0; letter-spacing: -0.03em; }
+      h1 { font-size: clamp(1.25rem, 2vw, 1.9rem); }
+      h2 { margin-bottom: 0.75rem; font-size: 1rem; }
+      h3 { font-size: 0.9rem; }
+      .status { min-height: 1.5rem; margin-top: 0.35rem; color: var(--muted); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .status.error { color: var(--danger); }
+      .controls, .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      .controls { justify-content: flex-end; }
+      input, button { font: 0.88rem ui-sans-serif, system-ui, sans-serif; }
+      input[type="file"] { max-width: 16rem; }
+      input[type="text"] { width: 100%; border: 1px solid var(--line); border-radius: 0.65rem; padding: 0.55rem 0.65rem; color: var(--ink); background: white; }
+      label { display: grid; gap: 0.25rem; color: var(--muted); font: 0.82rem ui-sans-serif, system-ui, sans-serif; }
+      button { border: 1px solid var(--line); border-radius: 999px; padding: 0.55rem 0.8rem; color: var(--ink); background: white; font-weight: 700; cursor: pointer; }
+      button.primary { border-color: var(--accent); color: white; background: var(--accent); }
+      button.save { border-color: var(--ok); color: white; background: var(--ok); }
+      button.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { cursor: not-allowed; opacity: 0.45; }
+      main { display: grid; grid-template-columns: minmax(24rem, 34rem) minmax(0, 1fr); min-height: 0; }
+      aside { min-height: 0; overflow: auto; padding: 1rem; border-right: 1px solid var(--line); background: var(--panel); }
+      .panel { margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.84); box-shadow: 0 18px 50px rgba(29, 36, 51, 0.08); }
+      .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+      .metric { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .metric:last-child { border-bottom: 0; }
+      .metric span:first-child { color: var(--muted); }
+      .attachment-list { display: grid; gap: 0.45rem; max-height: 20rem; overflow: auto; }
+      .attachment-button { width: 100%; border-radius: 0.8rem; padding: 0.7rem 0.8rem; text-align: left; white-space: normal; }
+      .attachment-button.active { border-color: var(--accent); background: var(--accent-soft); }
+      .attachment-meta { display: block; margin-top: 0.25rem; color: var(--muted); font-weight: 500; font-size: 0.78rem; }
+      .file-row { display: grid; gap: 0.65rem; margin-top: 0.75rem; }
+      .viewer { min-width: 0; min-height: 0; overflow: auto; padding: 2rem; }
+      .canvas-frame { display: grid; place-items: start center; min-height: 100%; }
+      canvas { display: block; max-width: none; border: 1px solid #cbd5e1; border-radius: 0.4rem; background: white; box-shadow: 0 24px 70px rgba(29, 36, 51, 0.22); }
+      .empty { max-width: 38rem; margin: 8vh auto; padding: 2rem; border: 1px dashed var(--line); border-radius: 1rem; text-align: center; background: rgba(255, 255, 255, 0.72); }
+      @media (max-width: 980px) { header { flex-direction: column; } .controls { justify-content: flex-start; } main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Attachments Panel</h1>
+          <div class="status" id="status">Load a PDF to view, add, replace, remove, download, and save embedded files.</div>
+        </div>
+        <div class="controls">
+          <input id="pdfInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+          <button id="saveButton" class="save" type="button" disabled>Save PDF</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span>Attachments</span><strong id="attachmentCount">0</strong></div>
+            <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Embedded Files</h2>
+            <div id="attachmentList" class="attachment-list"></div>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="downloadButton" type="button" disabled>Download selected</button>
+              <button id="deleteButton" class="danger" type="button" disabled>Delete selected</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Add Attachment</h2>
+            <div class="file-row">
+              <input id="addFileInput" type="file">
+              <label>Name <input id="addNameInput" type="text" placeholder="Defaults to selected file name"></label>
+              <label>MIME type <input id="addMimeInput" type="text" placeholder="Defaults to selected file type"></label>
+              <button id="addButton" class="primary" type="button" disabled>Add attachment</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Replace Selected File</h2>
+            <p class="status">Replacement keeps the existing attachment name and updates bytes plus MIME type.</p>
+            <div class="file-row">
+              <input id="updateFileInput" type="file">
+              <label>MIME type <input id="updateMimeInput" type="text" placeholder="Defaults to selected file type"></label>
+              <button id="updateButton" class="primary" type="button" disabled>Replace attachment</button>
+            </div>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>The demo PDF loads automatically. Use the file input to inspect another PDF.</p>
+            </div>
+            <canvas id="pageCanvas" hidden></canvas>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        pageSize: null,
+        zoom: 0.85,
+        rendering: false,
+        dirty: false,
+        attachments: [],
+        selectedAttachmentIndex: -1,
+      };
+
+      const elements = {
+        pdfInput: document.getElementById("pdfInput"),
+        addFileInput: document.getElementById("addFileInput"),
+        updateFileInput: document.getElementById("updateFileInput"),
+        addNameInput: document.getElementById("addNameInput"),
+        addMimeInput: document.getElementById("addMimeInput"),
+        updateMimeInput: document.getElementById("updateMimeInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        saveButton: document.getElementById("saveButton"),
+        downloadButton: document.getElementById("downloadButton"),
+        deleteButton: document.getElementById("deleteButton"),
+        addButton: document.getElementById("addButton"),
+        updateButton: document.getElementById("updateButton"),
+        attachmentList: document.getElementById("attachmentList"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        attachmentCount: document.getElementById("attachmentCount"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        emptyState: document.getElementById("emptyState"),
+        canvas: document.getElementById("pageCanvas"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function selectedAttachment() {
+        return state.attachments.find((attachment) => attachment.index === state.selectedAttachmentIndex) || null;
+      }
+
+      function hasSelectedAttachment() {
+        return Boolean(selectedAttachment());
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 0.85;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+        elements.saveButton.disabled = !hasDocument || state.rendering || !state.dirty;
+        elements.downloadButton.disabled = !hasDocument || state.rendering || !hasSelectedAttachment();
+        elements.deleteButton.disabled = !hasDocument || state.rendering || !hasSelectedAttachment();
+        elements.addButton.disabled = !hasDocument || state.rendering || !elements.addFileInput.files.length;
+        elements.updateButton.disabled = !hasDocument || state.rendering || !hasSelectedAttachment() || !elements.updateFileInput.files.length;
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({ locateFile: (file) => new URL(`../../dist/${file}`, import.meta.url).href });
+        }
+        return state.api;
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) state.doc.close();
+        state.doc = null;
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+      }
+
+      function drawRgbaToCanvas(bytes, width, height) {
+        elements.canvas.width = width;
+        elements.canvas.height = height;
+        elements.canvas.style.width = `${width}px`;
+        elements.canvas.style.height = `${height}px`;
+        elements.canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(bytes), width, height), 0, 0);
+      }
+
+      function refreshAttachments() {
+        if (!state.doc) {
+          state.attachments = [];
+          state.selectedAttachmentIndex = -1;
+          renderAttachments();
+          return;
+        }
+        state.attachments = state.doc.attachments();
+        if (!state.attachments.some((attachment) => attachment.index === state.selectedAttachmentIndex)) {
+          state.selectedAttachmentIndex = state.attachments[0]?.index ?? -1;
+        }
+        renderAttachments();
+      }
+
+      function renderAttachments() {
+        elements.attachmentList.replaceChildren();
+        elements.attachmentCount.textContent = String(state.attachments.length);
+        if (state.attachments.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = "No embedded files found. Add one below, then save the PDF.";
+          elements.attachmentList.append(empty);
+          updateControls();
+          return;
+        }
+
+        for (const attachment of state.attachments) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `attachment-button${attachment.index === state.selectedAttachmentIndex ? " active" : ""}`;
+          button.innerHTML = `${attachment.name || "Untitled attachment"}<span class="attachment-meta">#${attachment.index} · ${formatBytes(attachment.fileSize)} · ${attachment.mimeType || "unknown MIME"}</span>`;
+          button.addEventListener("click", () => {
+            state.selectedAttachmentIndex = attachment.index;
+            renderAttachments();
+            setStatus(`Selected ${attachment.name || `attachment ${attachment.index}`}.`);
+          });
+          elements.attachmentList.append(button);
+        }
+        updateControls();
+      }
+
+      async function renderCurrentPage() {
+        if (!state.doc || state.rendering) return;
+        state.rendering = true;
+        updateControls();
+        try {
+          state.pageCount = state.doc.pageCount();
+          state.pageSize = state.doc.pageSize(state.pageIndex);
+          const width = Math.max(1, Math.round(state.pageSize.width * state.zoom));
+          const height = Math.max(1, Math.round(state.pageSize.height * state.zoom));
+          const rendered = state.doc.renderPage({ pageIndex: state.pageIndex, width, height, flags: RENDER_ANNOTATIONS });
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.canvas.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          setStatus("Rendered attachments panel sample.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadPdf(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.zoom = 0.85;
+        state.dirty = false;
+        state.attachments = [];
+        state.selectedAttachmentIndex = -1;
+        elements.canvas.hidden = true;
+        elements.emptyState.hidden = false;
+        updateControls();
+        setStatus("Opening PDF...");
+        try {
+          const api = await getApi();
+          state.doc = api.openDocument(new Uint8Array(await file.arrayBuffer()));
+          refreshAttachments();
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      async function loadDemoPdf() {
+        try {
+          setStatus("Loading demo.pdf...");
+          const response = await fetch("../demo.pdf");
+          if (!response.ok) throw new Error(`Unable to fetch demo.pdf (${response.status})`);
+          const blob = await response.blob();
+          await loadPdf(new File([blob], "demo.pdf", { type: "application/pdf" }));
+        } catch (error) {
+          console.warn(error);
+          setStatus("Demo PDF could not be loaded. Choose a PDF file manually.", true);
+        }
+      }
+
+      function downloadBytes(bytes, name, mimeType = "application/octet-stream") {
+        const blob = new Blob([bytes], { type: mimeType || "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name || "attachment.bin";
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function downloadSelectedAttachment() {
+        try {
+          const attachment = selectedAttachment();
+          if (!attachment) return;
+          const read = state.doc.readAttachment(attachment.index);
+          downloadBytes(read.fileBytes, read.name, read.mimeType);
+          setStatus(`Downloaded ${read.name || "attachment"}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to download attachment.", true);
+        }
+      }
+
+      async function addAttachment() {
+        const file = elements.addFileInput.files[0];
+        if (!file) return;
+        try {
+          const name = elements.addNameInput.value.trim() || file.name;
+          const mimeType = elements.addMimeInput.value.trim() || file.type || "application/octet-stream";
+          state.doc.addAttachment({ name, mimeType, fileBytes: new Uint8Array(await file.arrayBuffer()) });
+          state.dirty = true;
+          elements.addFileInput.value = "";
+          elements.addNameInput.value = "";
+          elements.addMimeInput.value = "";
+          refreshAttachments();
+          setStatus(`Added ${name}. Save the PDF to persist changes.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to add attachment.", true);
+        }
+      }
+
+      async function updateAttachment() {
+        const attachment = selectedAttachment();
+        const file = elements.updateFileInput.files[0];
+        if (!attachment || !file) return;
+        try {
+          const mimeType = elements.updateMimeInput.value.trim() || file.type || attachment.mimeType || "application/octet-stream";
+          state.doc.updateAttachment(attachment.index, { mimeType, fileBytes: new Uint8Array(await file.arrayBuffer()) });
+          state.dirty = true;
+          elements.updateFileInput.value = "";
+          elements.updateMimeInput.value = "";
+          refreshAttachments();
+          setStatus(`Replaced ${attachment.name || "attachment"}. Save the PDF to persist changes.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to replace attachment.", true);
+        }
+      }
+
+      function deleteSelectedAttachment() {
+        const attachment = selectedAttachment();
+        if (!attachment) return;
+        try {
+          state.doc.deleteAttachment(attachment.index);
+          state.dirty = true;
+          refreshAttachments();
+          setStatus(`Deleted ${attachment.name || "attachment"}. Save the PDF to persist changes.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to delete attachment.", true);
+        }
+      }
+
+      function savePdf() {
+        try {
+          const output = state.doc.save();
+          const base = state.fileName.replace(/\.pdf$/i, "") || "attachments";
+          downloadBytes(output, `${base}-attachments.pdf`, "application/pdf");
+          state.dirty = false;
+          updateControls();
+          setStatus("Saved modified PDF.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to save PDF.", true);
+        }
+      }
+
+      elements.pdfInput.addEventListener("change", async () => {
+        const [file] = elements.pdfInput.files;
+        if (file) await loadPdf(file);
+      });
+      elements.addFileInput.addEventListener("change", () => {
+        const [file] = elements.addFileInput.files;
+        if (file) {
+          elements.addNameInput.value ||= file.name;
+          elements.addMimeInput.value ||= file.type;
+        }
+        updateControls();
+      });
+      elements.updateFileInput.addEventListener("change", () => {
+        const [file] = elements.updateFileInput.files;
+        if (file) elements.updateMimeInput.value ||= file.type;
+        updateControls();
+      });
+      elements.prevButton.addEventListener("click", async () => {
+        if (state.pageIndex > 0) {
+          state.pageIndex -= 1;
+          await renderCurrentPage();
+        }
+      });
+      elements.nextButton.addEventListener("click", async () => {
+        if (state.pageIndex < state.pageCount - 1) {
+          state.pageIndex += 1;
+          await renderCurrentPage();
+        }
+      });
+      elements.zoomOutButton.addEventListener("click", async () => {
+        state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+      elements.zoomResetButton.addEventListener("click", async () => {
+        state.zoom = 0.85;
+        await renderCurrentPage();
+      });
+      elements.zoomInButton.addEventListener("click", async () => {
+        state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+      elements.downloadButton.addEventListener("click", downloadSelectedAttachment);
+      elements.addButton.addEventListener("click", addAttachment);
+      elements.updateButton.addEventListener("click", updateAttachment);
+      elements.deleteButton.addEventListener("click", deleteSelectedAttachment);
+      elements.saveButton.addEventListener("click", savePdf);
+      window.addEventListener("beforeunload", () => {
+        closeCurrentDocument();
+        if (state.api) state.api.destroy();
+      });
+      updateControls();
+      loadDemoPdf();
+    </script>
+  </body>
+</html>
