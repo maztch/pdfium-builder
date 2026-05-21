@@ -218,6 +218,7 @@ The matrix must be invertible.
 ## Content insertion
 
 - `wasm_pdf_add_text_page(handle, pageIndex, text, x, y, fontSize, rgba)` inserts page text. `text` must be valid UTF-8.
+- `wasm_pdf_add_text_box_page(handle, pageIndex, text, x, y, width, height, fontSize, rgba, fontName, align, lineHeight)` inserts one text object per laid-out line and returns the number of inserted lines, or `-1` on failure. `width > 0` enables word wrapping. `height > 0` limits lines downward from `y`. `fontName` defaults to `Helvetica` when empty. `align` is `0` left, `1` center, or `2` right. `lineHeight <= 0` uses `fontSize * 1.2`. `text` and `fontName` must be valid UTF-8.
 - `wasm_pdf_add_rgba_image_page(handle, pageIndex, rgbaPtr, rgbaSize, imageWidth, imageHeight, x, y, displayWidth, displayHeight)` inserts an image from row-major 8-bit RGBA pixels. `rgbaSize` must equal `imageWidth * imageHeight * 4`.
 - `wasm_pdf_add_jpeg_image_page(handle, pageIndex, jpegPtr, jpegSize, x, y, displayWidth, displayHeight)` inserts encoded JPEG bytes using PDFium's JPEG image path.
 - `wasm_pdf_add_png_image_page(handle, pageIndex, pngPtr, pngSize, x, y, displayWidth, displayHeight)` decodes PNG bytes to RGBA and inserts the image.
@@ -343,3 +344,4 @@ Common render flag:
 - `59`: form read failed
 - `60`: form write failed
 - `61`: redaction failed
+- `62`: text layout failed

@@ -1,9 +1,9 @@
-import { createPdfiumApi } from "../pdfium-api.js";
+import { createPdfiumApi } from "../../pdfium-api.js";
 
 async function addTextToPdf(inputBytes, text) {
   const pdfium = await createPdfiumApi({
     locateFile(file) {
-      return new URL(`../dist/${file}`, import.meta.url).href;
+      return new URL(`../../dist/${file}`, import.meta.url).href;
     },
   });
 

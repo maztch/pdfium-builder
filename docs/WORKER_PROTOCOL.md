@@ -163,8 +163,13 @@ Returns `{ pdfBytes }`.
 | `y` | number | No | `120` | PDF user-space y. |
 | `fontSize` | number | No | `16` | Positive size recommended. |
 | `rgba` | number | No | `0xff000000` | `0xAARRGGBB`. |
+| `width` | number | No | `0` | Enables word wrapping when greater than `0`. |
+| `height` | number | No | `0` | Limits multiline layout downward from `y` when greater than `0`. |
+| `fontName` | string | No | `"Helvetica"` | PDFium standard font name, such as `"Helvetica"`, `"Helvetica-Bold"`, `"Times-Roman"`, or `"Courier"`. |
+| `align` | string or number | No | `"left"` | `"left"`/`0`, `"center"`/`1`, or `"right"`/`2`. Applies when `width > 0`. |
+| `lineHeight` | number | No | `0` | PDF units between baselines. `0` uses `fontSize * 1.2`. |
 
-Returns `{ pdfBytes }`.
+Returns `{ pdfBytes, lineCount }`. `lineCount` is `1` for the legacy single-line path and the inserted line count when advanced layout fields are used.
 
 ## `addImage`
 

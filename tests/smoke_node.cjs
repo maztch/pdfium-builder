@@ -404,6 +404,20 @@ async function main() {
       doc.setMetadata('Title', 'Direct wrapper title');
       assert.equal(doc.metadata('Title'), 'Direct wrapper title', 'direct API metadata should round-trip');
       doc.addText({ pageIndex: 0, text: 'Direct wrapper text', x: 72, y: 120, fontSize: 12, rgba: 0xff111111 });
+      const directTextBoxLines = doc.addTextBox({
+        pageIndex: 0,
+        text: 'Direct wrapped layout text',
+        x: 72,
+        y: 230,
+        width: 80,
+        height: 48,
+        fontSize: 10,
+        rgba: 0xff222222,
+        fontName: 'Courier',
+        align: 'center',
+        lineHeight: 12,
+      });
+      assert.ok(directTextBoxLines >= 2, 'direct API addTextBox should wrap text into multiple lines');
       doc.addRgbaImage({
         pageIndex: 0,
         rgbaBytes: new Uint8Array([
@@ -418,6 +432,7 @@ async function main() {
         displayHeight: 24,
       });
       assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
+      assert.match(doc.pageText(0), /Direct[\r\n]+wrapped/, 'direct API pageText should read wrapped inserted text');
       const matches = doc.searchPageText(0, 'Direct wrapper', 0);
       assert.equal(matches.length, 1, 'direct API search should return one match');
       assert.equal(doc.redactPageText({ pageIndex: 0, query: 'Direct wrapper', flags: 0, rgba: 0xff000000 }), 1, 'direct API redactPageText should redact one match');
@@ -1150,6 +1165,15 @@ async function main() {
     assert.equal(added, 1, 'add text failed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid UTF-8 add text should clear last error');
 
+    const nativeTextBoxLines = mod.ccall(
+      'wasm_pdf_add_text_box_page',
+      'number',
+      ['number', 'number', 'string', 'number', 'number', 'number', 'number', 'number', 'number', 'string', 'number', 'number'],
+      [handle, 0, 'Native wrapped layout text', 72, 680, 85, 48, 10, 0xff003366, 'Courier', 2, 12]
+    );
+    assert.ok(nativeTextBoxLines >= 2, 'native add text box should wrap text into multiple lines');
+    assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'native add text box should clear last error');
+
     const imageBytes = new Uint8Array([
       255, 0, 0, 255, 0, 255, 0, 255,
       0, 0, 255, 255, 255, 255, 0, 255,
@@ -1225,7 +1249,11 @@ async function main() {
     assert.equal(addedPng, 1, 'add PNG image should succeed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid PNG insert should clear last error');
 
-    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 4, 'text and image inserts should add four page objects');
+    assert.equal(
+      mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]),
+      4 + nativeTextBoxLines,
+      'text and image inserts should include wrapped text line objects'
+    );
 
     const gotTextObject = mod.ccall(
       'wasm_pdf_get_page_object_info',
@@ -1238,14 +1266,15 @@ async function main() {
     assert.ok(mod.getValue(rightPtr, 'double') > mod.getValue(leftPtr, 'double'), 'text object bounds should have width');
     assert.ok(mod.getValue(topPtr, 'double') > mod.getValue(bottomPtr, 'double'), 'text object bounds should have height');
 
+    const imageObjectIndex = 1 + nativeTextBoxLines;
     const gotImageObject = mod.ccall(
       'wasm_pdf_get_page_object_info',
       'number',
       ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
-      [handle, 0, 1, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+      [handle, 0, imageObjectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
     );
     assert.equal(gotImageObject, 1, 'image page object info should be readable');
-    assert.equal(mod.getValue(typePtr, 'i32'), 3, 'second object should be image');
+    assert.equal(mod.getValue(typePtr, 'i32'), 3, 'first image object should be image');
     assert.equal(mod.getValue(leftPtr, 'double'), 72, 'image object left should match placement');
     assert.equal(mod.getValue(bottomPtr, 'double'), 120, 'image object bottom should match placement');
     assert.equal(mod.getValue(rightPtr, 'double'), 120, 'image object right should match placement');
@@ -1255,7 +1284,7 @@ async function main() {
       'wasm_pdf_transform_page_object',
       'number',
       ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
-      [handle, 0, 1, 0, 0, 0, 0, 0, 0]
+      [handle, 0, imageObjectIndex, 0, 0, 0, 0, 0, 0]
     );
     assert.equal(invalidTransform, 0, 'singular object transform should fail');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 2, 'singular object transform should report invalid argument');
@@ -1264,7 +1293,7 @@ async function main() {
       'wasm_pdf_transform_page_object',
       'number',
       ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
-      [handle, 0, 1, 1, 0, 0, 1, 10, 20]
+      [handle, 0, imageObjectIndex, 1, 0, 0, 1, 10, 20]
     );
     assert.equal(transformedImage, 1, 'translate page object should succeed');
     assert.equal(mod.ccall('wasm_pdf_last_error', 'number', [], []), 0, 'valid object transform should clear last error');
@@ -1273,7 +1302,7 @@ async function main() {
       'wasm_pdf_get_page_object_info',
       'number',
       ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
-      [handle, 0, 1, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
+      [handle, 0, imageObjectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr]
     );
     assert.equal(gotTransformedImageObject, 1, 'transformed image page object info should be readable');
     assert.equal(mod.getValue(leftPtr, 'double'), 82, 'transformed image object left should move');
@@ -1294,10 +1323,14 @@ async function main() {
       'wasm_pdf_delete_page_object',
       'number',
       ['number', 'number', 'number'],
-      [handle, 0, 1]
+      [handle, 0, imageObjectIndex]
     );
     assert.equal(deletedObject, 1, 'delete page object should succeed');
-    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]), 3, 'delete page object should remove one object');
+    assert.equal(
+      mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [handle, 0]),
+      3 + nativeTextBoxLines,
+      'delete page object should remove one object'
+    );
 
     const invalidLink = mod.ccall(
       'wasm_pdf_add_link_annotation',
@@ -1548,7 +1581,11 @@ async function main() {
     );
     assert.notEqual(reopened, 0, 'saved PDF cannot be reopened');
     assert.equal(mod.ccall('wasm_pdf_page_count', 'number', ['number'], [reopened]), 1, 'saved PDF page count should remain one');
-    assert.equal(mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]), 3, 'saved PDF should persist deleted object state');
+    assert.equal(
+      mod.ccall('wasm_pdf_page_object_count', 'number', ['number', 'number'], [reopened, 0]),
+      3 + nativeTextBoxLines,
+      'saved PDF should persist deleted object state'
+    );
     assert.equal(mod.ccall('wasm_pdf_annotation_count', 'number', ['number', 'number'], [reopened, 0]), 4, 'saved PDF should persist deleted annotation state');
     assert.equal(mod.ccall('wasm_pdf_get_page_rotation', 'number', ['number', 'number'], [reopened, 0]), 1, 'saved PDF rotation should persist');
     assert.equal(mod.ccall(
@@ -1783,6 +1820,30 @@ async function main() {
     mod.ccall('wasm_pdf_close', null, ['number'], [reopened]);
 
     worker = createPdfiumNodeWorker();
+    let workerTextBytes = createMinimalPdf();
+    const workerTextResult = await requestPdfWorker(
+      worker,
+      'addText',
+      {
+        pdfBytes: workerTextBytes.buffer,
+        text: 'Worker wrapped layout text',
+        pageIndex: 0,
+        x: 72,
+        y: 210,
+        width: 85,
+        height: 48,
+        fontSize: 10,
+        rgba: 0xff000000,
+        fontName: 'Courier',
+        align: 'right',
+        lineHeight: 12,
+      },
+      [workerTextBytes.buffer]
+    );
+    assert.ok(workerTextResult.lineCount >= 2, 'worker addText should return wrapped line count');
+    workerTextBytes = new Uint8Array(workerTextResult.pdfBytes);
+    assert.equal(Buffer.from(workerTextBytes.subarray(0, 5)).toString('ascii'), '%PDF-', 'worker addText advanced output should be PDF bytes');
+
     let workerRedactBytes = createMinimalPdf();
     let workerRedactResult = await requestPdfWorker(
       worker,

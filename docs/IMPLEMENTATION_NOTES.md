@@ -60,6 +60,12 @@ This PDFium build recognizes Redact annotations but does not expose an apply-red
 
 This removes matched text from extraction/search for simple generated text objects. It can remove more content than the exact query when a single text object contains multiple words or glyph runs. It does not redact image pixels, vector outlines, annotations, or hidden duplicate text.
 
+## Text Box Insertion
+
+`wasm_pdf_add_text_box_page()` keeps the existing simple text insertion model, but creates one PDF text page object per laid-out line. Hard `\n`/`\r\n` breaks are preserved, `width > 0` enables word wrapping at whitespace, `height > 0` stops layout after the available vertical space, and alignment is applied by measuring each line before insertion.
+
+Font selection is passed to PDFium's standard text object creation path. Use standard PDF font names such as `Helvetica`, `Helvetica-Bold`, `Times-Roman`, or `Courier` unless the build grows explicit embedded-font support.
+
 ## JPEG Insertion
 
 JPEG insertion uses PDFium's public `FPDFImageObj_LoadJpegFileInline()` API.

@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Basic Viewer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172033;
+        --muted: #5d6678;
+        --line: #d8deea;
+        --panel: #ffffff;
+        --paper: #f7f3ea;
+        --accent: #0f766e;
+        --accent-dark: #115e59;
+        --danger: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(15, 118, 110, 0.18), transparent 32rem),
+          linear-gradient(135deg, #fbf8f1 0%, #edf2f7 100%);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(12px);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.2rem, 2vw, 1.8rem);
+        letter-spacing: -0.03em;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+
+      input[type="file"] {
+        max-width: 16rem;
+      }
+
+      button,
+      .file-label {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.55rem 0.8rem;
+        color: var(--ink);
+        background: var(--panel);
+        font: 600 0.9rem ui-sans-serif, system-ui, sans-serif;
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        color: white;
+        background: var(--accent);
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent-dark);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 18rem 1fr;
+        min-height: 0;
+      }
+
+      aside {
+        padding: 1rem;
+        border-right: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.65rem 0;
+        border-bottom: 1px solid var(--line);
+        font: 0.92rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .metric span:first-child {
+        color: var(--muted);
+      }
+
+      .viewer {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 2rem;
+      }
+
+      .canvas-frame {
+        display: grid;
+        place-items: start center;
+        min-height: 100%;
+      }
+
+      canvas {
+        display: block;
+        max-width: none;
+        border: 1px solid #ccd4e2;
+        border-radius: 0.4rem;
+        background: white;
+        box-shadow: 0 24px 70px rgba(23, 32, 51, 0.2);
+      }
+
+      .empty {
+        max-width: 38rem;
+        margin: 8vh auto;
+        padding: 2rem;
+        border: 1px dashed var(--line);
+        border-radius: 1rem;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .status {
+        min-height: 1.5rem;
+        margin-top: 1rem;
+        color: var(--muted);
+        font: 0.9rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      @media (max-width: 800px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .controls {
+          justify-content: flex-start;
+        }
+
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .viewer {
+          padding: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Basic Viewer</h1>
+          <div class="status" id="status">Load a PDF to render it with the direct ES module API.</div>
+        </div>
+        <div class="controls">
+          <input id="fileInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+          <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+          <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+          <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          <div class="metric"><span>Render size</span><strong id="renderSize">-</strong></div>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>Select a PDF file from your machine. The file stays local in the browser.</p>
+            </div>
+            <canvas id="pageCanvas" hidden></canvas>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        zoom: 1,
+        rendering: false,
+      };
+
+      const elements = {
+        fileInput: document.getElementById("fileInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        renderSize: document.getElementById("renderSize"),
+        emptyState: document.getElementById("emptyState"),
+        canvas: document.getElementById("pageCanvas"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 1;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) {
+          state.doc.close();
+          state.doc = null;
+        }
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({
+            locateFile(file) {
+              return new URL(`../../dist/${file}`, import.meta.url).href;
+            },
+          });
+        }
+        return state.api;
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        const canvas = elements.canvas;
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+
+        const ctx = canvas.getContext("2d");
+        const imageData = new ImageData(new Uint8ClampedArray(rgbaBytes), width, height);
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      async function renderCurrentPage() {
+        if (!state.doc || state.rendering) return;
+
+        state.rendering = true;
+        updateControls();
+        try {
+          const size = state.doc.pageSize(state.pageIndex);
+          const width = Math.max(1, Math.round(size.width * state.zoom));
+          const height = Math.max(1, Math.round(size.height * state.zoom));
+          const rendered = state.doc.renderPage({
+            pageIndex: state.pageIndex,
+            width,
+            height,
+            flags: RENDER_ANNOTATIONS,
+          });
+
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.canvas.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${size.width.toFixed(1)} x ${size.height.toFixed(1)} pt`;
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          elements.renderSize.textContent = `${width} x ${height} px`;
+          setStatus("Rendered page.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadFile(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.zoom = 1;
+        elements.canvas.hidden = true;
+        elements.emptyState.hidden = false;
+        updateControls();
+        setStatus("Opening PDF...");
+
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.doc = api.openDocument(bytes);
+          state.pageCount = state.doc.pageCount();
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      elements.fileInput.addEventListener("change", async () => {
+        const [file] = elements.fileInput.files;
+        if (file) await loadFile(file);
+      });
+
+      elements.prevButton.addEventListener("click", async () => {
+        if (state.pageIndex > 0) {
+          state.pageIndex -= 1;
+          await renderCurrentPage();
+        }
+      });
+
+      elements.nextButton.addEventListener("click", async () => {
+        if (state.pageIndex < state.pageCount - 1) {
+          state.pageIndex += 1;
+          await renderCurrentPage();
+        }
+      });
+
+      elements.zoomOutButton.addEventListener("click", async () => {
+        state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+
+      elements.zoomResetButton.addEventListener("click", async () => {
+        state.zoom = 1;
+        await renderCurrentPage();
+      });
+
+      elements.zoomInButton.addEventListener("click", async () => {
+        state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+
+      window.addEventListener("beforeunload", () => {
+        closeCurrentDocument();
+        if (state.api) state.api.destroy();
+      });
+
+      updateControls();
+    </script>
+  </body>
+</html>

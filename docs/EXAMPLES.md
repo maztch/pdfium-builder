@@ -146,6 +146,32 @@ const result = await requestPdfWorker(
 const outputPdf = new Uint8Array(result.pdfBytes);
 ```
 
+For wrapped or aligned text, add layout fields to the same worker call:
+
+```js
+const result = await requestPdfWorker(
+  worker,
+  "addText",
+  {
+    pdfBytes: inputBytes.buffer,
+    pageIndex: 0,
+    text: "Reviewed and approved for publication.",
+    x: 72,
+    y: 720,
+    width: 220,
+    height: 80,
+    fontSize: 12,
+    fontName: "Helvetica-Bold",
+    align: "center",
+    lineHeight: 15,
+    rgba: 0xff003366,
+  },
+  [inputBytes.buffer]
+);
+
+console.log(result.lineCount);
+```
+
 ## Add JPEG Or PNG
 
 ```js

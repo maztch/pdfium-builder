@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Page Management</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172033;
+        --muted: #667085;
+        --line: #d8deea;
+        --panel: rgba(255, 255, 255, 0.86);
+        --accent: #0e7490;
+        --ok: #047857;
+        --danger: #b42318;
+        --danger-soft: #fee4e2;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; color: var(--ink); font-family: ui-serif, Georgia, "Times New Roman", serif; background: radial-gradient(circle at 12% 8%, rgba(14, 116, 144, 0.18), transparent 30rem), radial-gradient(circle at 90% 18%, rgba(4, 120, 87, 0.14), transparent 26rem), linear-gradient(135deg, #ecfeff 0%, #f0fdf4 100%); }
+      .shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+      header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(12px); }
+      h1, h2 { margin: 0; letter-spacing: -0.03em; }
+      h1 { font-size: clamp(1.25rem, 2vw, 1.9rem); }
+      h2 { margin-bottom: 0.75rem; font-size: 1rem; }
+      .status { min-height: 1.5rem; margin-top: 0.35rem; color: var(--muted); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .status.error { color: var(--danger); }
+      .controls, .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      .controls { justify-content: flex-end; }
+      input, select, button { font: 0.88rem ui-sans-serif, system-ui, sans-serif; }
+      input[type="file"] { max-width: 16rem; }
+      input[type="number"], input[type="text"], select { width: 100%; border: 1px solid var(--line); border-radius: 0.65rem; padding: 0.55rem 0.65rem; color: var(--ink); background: white; }
+      label { display: grid; gap: 0.25rem; color: var(--muted); font: 0.82rem ui-sans-serif, system-ui, sans-serif; }
+      button { border: 1px solid var(--line); border-radius: 999px; padding: 0.55rem 0.8rem; color: var(--ink); background: white; font-weight: 700; cursor: pointer; }
+      button.primary { border-color: var(--accent); color: white; background: var(--accent); }
+      button.save { border-color: var(--ok); color: white; background: var(--ok); }
+      button.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { cursor: not-allowed; opacity: 0.45; }
+      main { display: grid; grid-template-columns: minmax(23rem, 31rem) minmax(0, 1fr); min-height: 0; }
+      aside { min-height: 0; overflow: auto; padding: 1rem; border-right: 1px solid var(--line); background: var(--panel); }
+      .panel { margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.82); box-shadow: 0 18px 50px rgba(23, 32, 51, 0.08); }
+      .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+      .metric { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .metric:last-child { border-bottom: 0; }
+      .metric span:first-child { color: var(--muted); }
+      .viewer { min-width: 0; min-height: 0; overflow: auto; padding: 2rem; }
+      .canvas-frame { display: grid; place-items: start center; min-height: 100%; }
+      canvas { display: block; max-width: none; border: 1px solid #cbd5e1; border-radius: 0.4rem; background: white; box-shadow: 0 24px 70px rgba(23, 32, 51, 0.22); }
+      .empty { max-width: 38rem; margin: 8vh auto; padding: 2rem; border: 1px dashed var(--line); border-radius: 1rem; text-align: center; background: rgba(255, 255, 255, 0.72); }
+      @media (max-width: 980px) { header { flex-direction: column; } .controls { justify-content: flex-start; } main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Page Management</h1>
+          <div class="status" id="status">Load a PDF to insert, delete, duplicate, import, rotate, resize, and save pages.</div>
+        </div>
+        <div class="controls">
+          <input id="pdfInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+          <button id="saveButton" class="save" type="button" disabled>Save PDF</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span>Rotation</span><strong id="rotationInfo">-</strong></div>
+            <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Insert / Delete / Copy</h2>
+            <div class="grid-2">
+              <label>Blank width <input id="blankWidthInput" type="number" value="612" min="1" step="1"></label>
+              <label>Blank height <input id="blankHeightInput" type="number" value="792" min="1" step="1"></label>
+            </div>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="insertBeforeButton" class="primary" type="button" disabled>Insert before</button>
+              <button id="insertAfterButton" class="primary" type="button" disabled>Insert after</button>
+              <button id="duplicateButton" type="button" disabled>Duplicate current</button>
+              <button id="deleteButton" class="danger" type="button" disabled>Delete current</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Rotate / Resize</h2>
+            <label>Rotation
+              <select id="rotationInput">
+                <option value="0">0 degrees</option>
+                <option value="1">90 degrees</option>
+                <option value="2">180 degrees</option>
+                <option value="3">270 degrees</option>
+              </select>
+            </label>
+            <div class="grid-2" style="margin-top: 0.75rem;">
+              <label>Page width <input id="pageWidthInput" type="number" value="612" min="1" step="1"></label>
+              <label>Page height <input id="pageHeightInput" type="number" value="792" min="1" step="1"></label>
+            </div>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="rotateButton" class="primary" type="button" disabled>Apply rotation</button>
+              <button id="resizeButton" class="primary" type="button" disabled>Apply size</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Import Pages</h2>
+            <input id="sourcePdfInput" type="file" accept="application/pdf,.pdf">
+            <div class="metric"><span>Source</span><strong id="sourceInfo">None</strong></div>
+            <label style="margin-top: 0.75rem;">Page range
+              <input id="pageRangeInput" type="text" placeholder="Empty = all pages, or 1,3,5-7">
+            </label>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="importBeforeButton" type="button" disabled>Import before</button>
+              <button id="importAfterButton" type="button" disabled>Import after</button>
+            </div>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>Select a PDF file. Page mutations will re-render the current page and can be saved to a new PDF.</p>
+            </div>
+            <canvas id="pageCanvas" hidden></canvas>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const state = {
+        api: null,
+        doc: null,
+        sourceDoc: null,
+        fileName: "",
+        sourceName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        pageSize: null,
+        zoom: 0.85,
+        rendering: false,
+        dirty: false,
+      };
+
+      const elements = {
+        pdfInput: document.getElementById("pdfInput"),
+        sourcePdfInput: document.getElementById("sourcePdfInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        saveButton: document.getElementById("saveButton"),
+        insertBeforeButton: document.getElementById("insertBeforeButton"),
+        insertAfterButton: document.getElementById("insertAfterButton"),
+        duplicateButton: document.getElementById("duplicateButton"),
+        deleteButton: document.getElementById("deleteButton"),
+        rotateButton: document.getElementById("rotateButton"),
+        resizeButton: document.getElementById("resizeButton"),
+        importBeforeButton: document.getElementById("importBeforeButton"),
+        importAfterButton: document.getElementById("importAfterButton"),
+        blankWidthInput: document.getElementById("blankWidthInput"),
+        blankHeightInput: document.getElementById("blankHeightInput"),
+        pageWidthInput: document.getElementById("pageWidthInput"),
+        pageHeightInput: document.getElementById("pageHeightInput"),
+        rotationInput: document.getElementById("rotationInput"),
+        pageRangeInput: document.getElementById("pageRangeInput"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        sourceInfo: document.getElementById("sourceInfo"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        rotationInfo: document.getElementById("rotationInfo"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        emptyState: document.getElementById("emptyState"),
+        canvas: document.getElementById("pageCanvas"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        const hasSource = Boolean(state.sourceDoc);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 0.85;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+        elements.saveButton.disabled = !hasDocument || state.rendering || !state.dirty;
+        elements.insertBeforeButton.disabled = !hasDocument || state.rendering;
+        elements.insertAfterButton.disabled = !hasDocument || state.rendering;
+        elements.duplicateButton.disabled = !hasDocument || state.rendering;
+        elements.deleteButton.disabled = !hasDocument || state.rendering || state.pageCount <= 1;
+        elements.rotateButton.disabled = !hasDocument || state.rendering;
+        elements.resizeButton.disabled = !hasDocument || state.rendering;
+        elements.importBeforeButton.disabled = !hasDocument || !hasSource || state.rendering;
+        elements.importAfterButton.disabled = !hasDocument || !hasSource || state.rendering;
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({ locateFile: (file) => new URL(`../../dist/${file}`, import.meta.url).href });
+        }
+        return state.api;
+      }
+
+      function closeDocs() {
+        if (state.doc) state.doc.close();
+        if (state.sourceDoc) state.sourceDoc.close();
+        state.doc = null;
+        state.sourceDoc = null;
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        elements.canvas.width = width;
+        elements.canvas.height = height;
+        elements.canvas.style.width = `${width}px`;
+        elements.canvas.style.height = `${height}px`;
+        elements.canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgbaBytes), width, height), 0, 0);
+      }
+
+      function rotationLabel(rotation) {
+        return `${rotation * 90}deg (${rotation})`;
+      }
+
+      async function refreshDocumentState() {
+        state.pageCount = state.doc.pageCount();
+        if (state.pageIndex >= state.pageCount) state.pageIndex = state.pageCount - 1;
+        if (state.pageIndex < 0) state.pageIndex = 0;
+      }
+
+      async function renderCurrentPage() {
+        if (!state.doc || state.rendering) return;
+        state.rendering = true;
+        updateControls();
+        try {
+          await refreshDocumentState();
+          state.pageSize = state.doc.pageSize(state.pageIndex);
+          const rotation = state.doc.pageRotation(state.pageIndex);
+          const width = Math.max(1, Math.round(state.pageSize.width * state.zoom));
+          const height = Math.max(1, Math.round(state.pageSize.height * state.zoom));
+          const rendered = state.doc.renderPage({ pageIndex: state.pageIndex, width, height, flags: RENDER_ANNOTATIONS });
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.canvas.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;
+          elements.rotationInfo.textContent = rotationLabel(rotation);
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          elements.pageWidthInput.value = state.pageSize.width.toFixed(1);
+          elements.pageHeightInput.value = state.pageSize.height.toFixed(1);
+          elements.rotationInput.value = String(rotation);
+          setStatus("Rendered page.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadPdf(file) {
+        closeDocs();
+        state.fileName = file.name;
+        state.sourceName = "";
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.zoom = 0.85;
+        state.dirty = false;
+        elements.sourceInfo.textContent = "None";
+        elements.canvas.hidden = true;
+        elements.emptyState.hidden = false;
+        setStatus("Opening PDF...");
+        updateControls();
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.doc = api.openDocument(bytes);
+          await renderCurrentPage();
+        } catch (error) {
+          closeDocs();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      async function loadSourcePdf(file) {
+        if (state.sourceDoc) state.sourceDoc.close();
+        state.sourceDoc = null;
+        state.sourceName = file.name;
+        setStatus("Opening source PDF...");
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.sourceDoc = api.openDocument(bytes);
+          elements.sourceInfo.textContent = `${file.name} (${state.sourceDoc.pageCount()} pages)`;
+          setStatus("Source PDF ready for import.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open source PDF.", true);
+        } finally {
+          updateControls();
+        }
+      }
+
+      async function mutate(message, callback) {
+        try {
+          callback();
+          state.dirty = true;
+          await renderCurrentPage();
+          setStatus(message);
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Page mutation failed.", true);
+          updateControls();
+        }
+      }
+
+      function copyPage(srcDoc, srcPageIndex, dstDoc, dstPageIndex) {
+        dstDoc.call("wasm_pdf_copy_page", "number", ["number", "number", "number", "number"], [srcDoc.handle, srcPageIndex, dstDoc.handle, dstPageIndex], "Unable to copy page");
+      }
+
+      function importPages(srcDoc, pageRange, dstDoc, dstPageIndex) {
+        dstDoc.call("wasm_pdf_import_pages", "number", ["number", "string", "number", "number"], [srcDoc.handle, pageRange, dstDoc.handle, dstPageIndex], "Unable to import pages");
+      }
+
+      function savePdf() {
+        try {
+          const output = state.doc.save();
+          const base = state.fileName.replace(/\.pdf$/i, "") || "page-managed";
+          const blob = new Blob([output], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `${base}-pages.pdf`;
+          link.click();
+          URL.revokeObjectURL(url);
+          state.dirty = false;
+          updateControls();
+          setStatus("Saved modified PDF.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to save PDF.", true);
+        }
+      }
+
+      elements.pdfInput.addEventListener("change", async () => { const [file] = elements.pdfInput.files; if (file) await loadPdf(file); });
+      elements.sourcePdfInput.addEventListener("change", async () => { const [file] = elements.sourcePdfInput.files; if (file) await loadSourcePdf(file); });
+      elements.prevButton.addEventListener("click", async () => { if (state.pageIndex > 0) { state.pageIndex -= 1; await renderCurrentPage(); } });
+      elements.nextButton.addEventListener("click", async () => { if (state.pageIndex < state.pageCount - 1) { state.pageIndex += 1; await renderCurrentPage(); } });
+      elements.zoomOutButton.addEventListener("click", async () => { state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2))); await renderCurrentPage(); });
+      elements.zoomResetButton.addEventListener("click", async () => { state.zoom = 0.85; await renderCurrentPage(); });
+      elements.zoomInButton.addEventListener("click", async () => { state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2))); await renderCurrentPage(); });
+      elements.insertBeforeButton.addEventListener("click", () => mutate("Blank page inserted before current page.", () => state.doc.insertBlankPage({ pageIndex: state.pageIndex, width: Number(elements.blankWidthInput.value), height: Number(elements.blankHeightInput.value) })));
+      elements.insertAfterButton.addEventListener("click", () => mutate("Blank page inserted after current page.", () => { state.doc.insertBlankPage({ pageIndex: state.pageIndex + 1, width: Number(elements.blankWidthInput.value), height: Number(elements.blankHeightInput.value) }); state.pageIndex += 1; }));
+      elements.duplicateButton.addEventListener("click", () => mutate("Current page duplicated.", () => { copyPage(state.doc, state.pageIndex, state.doc, state.pageIndex + 1); state.pageIndex += 1; }));
+      elements.deleteButton.addEventListener("click", () => mutate("Current page deleted.", () => state.doc.deletePage(state.pageIndex)));
+      elements.rotateButton.addEventListener("click", () => mutate("Page rotation updated.", () => state.doc.setPageRotation(state.pageIndex, Number(elements.rotationInput.value))));
+      elements.resizeButton.addEventListener("click", () => mutate("Page size updated.", () => state.doc.setPageSize(state.pageIndex, Number(elements.pageWidthInput.value), Number(elements.pageHeightInput.value))));
+      elements.importBeforeButton.addEventListener("click", () => mutate("Pages imported before current page.", () => importPages(state.sourceDoc, elements.pageRangeInput.value.trim(), state.doc, state.pageIndex)));
+      elements.importAfterButton.addEventListener("click", () => mutate("Pages imported after current page.", () => { importPages(state.sourceDoc, elements.pageRangeInput.value.trim(), state.doc, state.pageIndex + 1); state.pageIndex += 1; }));
+      elements.saveButton.addEventListener("click", savePdf);
+      window.addEventListener("beforeunload", () => { closeDocs(); if (state.api) state.api.destroy(); });
+
+      updateControls();
+    </script>
+  </body>
+</html>

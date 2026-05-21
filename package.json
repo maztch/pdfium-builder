@@ -6,6 +6,7 @@
     "./raw": "./dist/pdfium.js"
   },
   "scripts": {
+    "examples": "npx http-server . -p 8080 -c-1",
     "smoke": "node tests/smoke_node.cjs"
   }
 }

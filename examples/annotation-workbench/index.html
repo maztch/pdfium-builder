@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Annotation Workbench</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172033;
+        --muted: #647084;
+        --line: #d8deea;
+        --panel: rgba(255, 255, 255, 0.86);
+        --accent: #047857;
+        --accent-soft: rgba(4, 120, 87, 0.18);
+        --active: rgba(251, 191, 36, 0.32);
+        --danger: #b42318;
+        --danger-soft: #fee4e2;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(4, 120, 87, 0.18), transparent 30rem),
+          radial-gradient(circle at 90% 18%, rgba(251, 191, 36, 0.2), transparent 26rem),
+          linear-gradient(135deg, #ecfdf5 0%, #fff7ed 100%);
+      }
+
+      .shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(12px);
+      }
+
+      h1, h2, h3 { margin: 0; letter-spacing: -0.03em; }
+      h1 { font-size: clamp(1.25rem, 2vw, 1.9rem); }
+      h2 { margin-bottom: 0.75rem; font-size: 1rem; }
+      h3 {
+        margin: 1rem 0 0.5rem;
+        font: 700 0.8rem ui-sans-serif, system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .status {
+        min-height: 1.5rem;
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font: 0.9rem ui-sans-serif, system-ui, sans-serif;
+      }
+      .status.error { color: var(--danger); }
+
+      .controls, .button-row, .field-row, .flag-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .controls { justify-content: flex-end; }
+
+      input, select, textarea, button {
+        font: 0.88rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      input[type="file"] { max-width: 16rem; }
+      input[type="number"] { width: 6.5rem; }
+      input[type="text"], input[type="url"], select, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 0.65rem;
+        padding: 0.55rem 0.65rem;
+        color: var(--ink);
+        background: white;
+      }
+      textarea { min-height: 4.5rem; resize: vertical; }
+      label { display: grid; gap: 0.25rem; color: var(--muted); font: 0.82rem ui-sans-serif, system-ui, sans-serif; }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.55rem 0.8rem;
+        color: var(--ink);
+        background: white;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button.primary { border-color: var(--accent); color: white; background: var(--accent); }
+      button.danger { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+      main { display: grid; grid-template-columns: minmax(24rem, 34rem) minmax(0, 1fr); min-height: 0; }
+      aside { min-height: 0; overflow: auto; padding: 1rem; border-right: 1px solid var(--line); background: var(--panel); }
+      .panel { margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.8); box-shadow: 0 18px 50px rgba(23, 32, 51, 0.08); }
+      .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+      .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+      .metric { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .metric:last-child { border-bottom: 0; }
+      .metric span:first-child { color: var(--muted); }
+
+      .annotation-list { display: grid; gap: 0.5rem; max-height: 20rem; overflow: auto; }
+      .annotation-button { width: 100%; border-radius: 0.8rem; text-align: left; white-space: normal; }
+      .annotation-button.active { border-color: #f59e0b; background: var(--active); }
+      .details { white-space: pre-wrap; word-break: break-word; font: 0.8rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+      .viewer { min-width: 0; min-height: 0; overflow: auto; padding: 2rem; }
+      .canvas-frame { display: grid; place-items: start center; min-height: 100%; }
+      .page-stack { position: relative; display: inline-block; }
+      canvas { display: block; max-width: none; border: 1px solid #cbd5e1; border-radius: 0.4rem; background: white; box-shadow: 0 24px 70px rgba(23, 32, 51, 0.22); }
+      .overlay { position: absolute; inset: 0; pointer-events: none; }
+      .annotation-rect { position: absolute; border: 2px solid rgba(4, 120, 87, 0.95); background: var(--accent-soft); border-radius: 0.2rem; }
+      .annotation-rect.active { border-color: #f59e0b; background: var(--active); box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.28); }
+      .empty { max-width: 38rem; margin: 8vh auto; padding: 2rem; border: 1px dashed var(--line); border-radius: 1rem; text-align: center; background: rgba(255, 255, 255, 0.72); }
+
+      @media (max-width: 1080px) {
+        header { flex-direction: column; }
+        .controls { justify-content: flex-start; }
+        main { grid-template-columns: 1fr; }
+        aside { border-right: 0; border-bottom: 1px solid var(--line); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Annotation Workbench</h1>
+          <div class="status" id="status">Load a PDF to inspect, add, update, delete, and save annotations.</div>
+        </div>
+        <div class="controls">
+          <input id="fileInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+          <button id="saveButton" class="primary" type="button" disabled>Save PDF</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+            <div class="metric"><span>Annotations</span><strong id="annotationCount">0</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Add Annotation</h2>
+            <div class="grid-2">
+              <label>Type
+                <select id="annotationType">
+                  <option value="highlight">Highlight</option>
+                  <option value="rectangle">Rectangle</option>
+                  <option value="link">Link</option>
+                  <option value="textNote">Text note</option>
+                  <option value="freeText">FreeText</option>
+                </select>
+              </label>
+              <label>Color <input id="annotationColor" type="color" value="#ffcc00"></label>
+            </div>
+            <div class="grid-4" style="margin-top: 0.75rem;">
+              <label>Left <input id="leftInput" type="number" value="72" step="1"></label>
+              <label>Bottom <input id="bottomInput" type="number" value="650" step="1"></label>
+              <label>Right <input id="rightInput" type="number" value="260" step="1"></label>
+              <label>Top <input id="topInput" type="number" value="700" step="1"></label>
+            </div>
+            <div class="grid-2" style="margin-top: 0.75rem;">
+              <label>Border width <input id="borderWidthInput" type="number" value="2" min="0" step="0.5"></label>
+              <label>FreeText font size <input id="fontSizeInput" type="number" value="14" min="1" step="1"></label>
+            </div>
+            <label style="margin-top: 0.75rem;">Contents
+              <textarea id="contentsInput">Visible annotation text</textarea>
+            </label>
+            <label style="margin-top: 0.75rem;">URI
+              <input id="uriInput" type="url" value="https://example.com">
+            </label>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="addButton" class="primary" type="button" disabled>Add annotation</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Selected Annotation</h2>
+            <pre id="selectedDetails" class="details">No annotation selected.</pre>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="updateRectButton" type="button" disabled>Update rect</button>
+              <button id="updateColorButton" type="button" disabled>Update color</button>
+              <button id="updateTextButton" type="button" disabled>Update text</button>
+              <button id="updateUriButton" type="button" disabled>Update URI</button>
+              <button id="deleteButton" class="danger" type="button" disabled>Delete</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Annotations</h2>
+            <div id="annotationList" class="annotation-list"></div>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>Select a PDF file from your machine. Annotation bounds will be drawn over the rendered page.</p>
+            </div>
+            <div id="pageStack" class="page-stack" hidden>
+              <canvas id="pageCanvas"></canvas>
+              <div id="overlay" class="overlay"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const SUBTYPE_NAMES = new Map([
+        [1, "Text note"],
+        [2, "Link"],
+        [3, "FreeText"],
+        [5, "Rectangle"],
+        [9, "Highlight"],
+      ]);
+      const decoder = new TextDecoder("utf-8");
+
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        pageSize: null,
+        renderSize: null,
+        zoom: 1,
+        rendering: false,
+        annotations: [],
+        selectedIndex: -1,
+        dirty: false,
+      };
+
+      const elements = {
+        fileInput: document.getElementById("fileInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        saveButton: document.getElementById("saveButton"),
+        addButton: document.getElementById("addButton"),
+        updateRectButton: document.getElementById("updateRectButton"),
+        updateColorButton: document.getElementById("updateColorButton"),
+        updateTextButton: document.getElementById("updateTextButton"),
+        updateUriButton: document.getElementById("updateUriButton"),
+        deleteButton: document.getElementById("deleteButton"),
+        annotationType: document.getElementById("annotationType"),
+        annotationColor: document.getElementById("annotationColor"),
+        leftInput: document.getElementById("leftInput"),
+        bottomInput: document.getElementById("bottomInput"),
+        rightInput: document.getElementById("rightInput"),
+        topInput: document.getElementById("topInput"),
+        borderWidthInput: document.getElementById("borderWidthInput"),
+        fontSizeInput: document.getElementById("fontSizeInput"),
+        contentsInput: document.getElementById("contentsInput"),
+        uriInput: document.getElementById("uriInput"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        annotationCount: document.getElementById("annotationCount"),
+        annotationList: document.getElementById("annotationList"),
+        selectedDetails: document.getElementById("selectedDetails"),
+        emptyState: document.getElementById("emptyState"),
+        pageStack: document.getElementById("pageStack"),
+        canvas: document.getElementById("pageCanvas"),
+        overlay: document.getElementById("overlay"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        const hasSelection = state.selectedIndex >= 0 && state.selectedIndex < state.annotations.length;
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 1;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+        elements.saveButton.disabled = !hasDocument || state.rendering || !state.dirty;
+        elements.addButton.disabled = !hasDocument || state.rendering;
+        elements.updateRectButton.disabled = !hasDocument || state.rendering || !hasSelection;
+        elements.updateColorButton.disabled = !hasDocument || state.rendering || !hasSelection;
+        elements.updateTextButton.disabled = !hasDocument || state.rendering || !hasSelection;
+        elements.updateUriButton.disabled = !hasDocument || state.rendering || !hasSelection;
+        elements.deleteButton.disabled = !hasDocument || state.rendering || !hasSelection;
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) {
+          state.doc.close();
+          state.doc = null;
+        }
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({
+            locateFile(file) {
+              return new URL(`../../dist/${file}`, import.meta.url).href;
+            },
+          });
+        }
+        return state.api;
+      }
+
+      function numberValue(input) {
+        return Number(input.value);
+      }
+
+      function currentRect() {
+        return {
+          left: numberValue(elements.leftInput),
+          bottom: numberValue(elements.bottomInput),
+          right: numberValue(elements.rightInput),
+          top: numberValue(elements.topInput),
+        };
+      }
+
+      function colorToRgba(color, alpha = 255) {
+        const hex = color.replace("#", "");
+        const r = Number.parseInt(hex.slice(0, 2), 16);
+        const g = Number.parseInt(hex.slice(2, 4), 16);
+        const b = Number.parseInt(hex.slice(4, 6), 16);
+        return ((alpha & 0xff) << 24) | (r << 16) | (g << 8) | b;
+      }
+
+      function rgbaToCss(rgba) {
+        const r = (rgba >> 16) & 0xff;
+        const g = (rgba >> 8) & 0xff;
+        const b = rgba & 0xff;
+        return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+      }
+
+      function parseAnnotationInfo(bytes, index) {
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        let offset = 0;
+        const readInt32 = () => { const value = view.getInt32(offset, true); offset += 4; return value; };
+        const readUint32 = () => { const value = view.getUint32(offset, true); offset += 4; return value; };
+        const readDouble = () => { const value = view.getFloat64(offset, true); offset += 8; return value; };
+        const readString = () => {
+          const size = readUint32();
+          const value = decoder.decode(bytes.subarray(offset, offset + size));
+          offset += size;
+          return value;
+        };
+
+        const subtype = readInt32();
+        const flags = readInt32();
+        const rect = { left: readDouble(), bottom: readDouble(), right: readDouble(), top: readDouble() };
+        const hasColor = readInt32() === 1;
+        const colorRgba = readInt32() >>> 0;
+        const borderWidth = readDouble();
+        const contents = readString();
+        const uri = readString();
+        const quadPointCount = readUint32();
+        const quadPoints = [];
+        for (let i = 0; i < quadPointCount; i += 1) {
+          quadPoints.push({
+            x1: readDouble(), y1: readDouble(),
+            x2: readDouble(), y2: readDouble(),
+            x3: readDouble(), y3: readDouble(),
+            x4: readDouble(), y4: readDouble(),
+          });
+        }
+        return { index, subtype, subtypeName: SUBTYPE_NAMES.get(subtype) || `Subtype ${subtype}`, flags, rect, hasColor, colorRgba, borderWidth, contents, uri, quadPoints };
+      }
+
+      function annotationCount(doc, pageIndex) {
+        const count = doc.mod.ccall("wasm_pdf_annotation_count", "number", ["number", "number"], [doc.handle, pageIndex]);
+        if (count < 0) doc.api.throwLastError("Unable to count annotations");
+        return count;
+      }
+
+      function annotationInfo(doc, pageIndex, index) {
+        const bytes = doc.outputBytes(
+          (outPtrPtr, outSizePtr) => doc.mod.ccall(
+            "wasm_pdf_get_annotation_info",
+            "number",
+            ["number", "number", "number", "number", "number"],
+            [doc.handle, pageIndex, index, outPtrPtr, outSizePtr]
+          ),
+          "Unable to read annotation info"
+        );
+        return parseAnnotationInfo(bytes, index);
+      }
+
+      function queryAnnotations() {
+        const count = annotationCount(state.doc, state.pageIndex);
+        state.annotations = [];
+        for (let index = 0; index < count; index += 1) {
+          state.annotations.push(annotationInfo(state.doc, state.pageIndex, index));
+        }
+        if (state.selectedIndex >= state.annotations.length) state.selectedIndex = -1;
+      }
+
+      function callAnnotation(name, argTypes, args, message) {
+        state.doc.call(name, "number", argTypes, args, message);
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        const canvas = elements.canvas;
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        elements.overlay.style.width = `${width}px`;
+        elements.overlay.style.height = `${height}px`;
+        const ctx = canvas.getContext("2d");
+        ctx.putImageData(new ImageData(new Uint8ClampedArray(rgbaBytes), width, height), 0, 0);
+      }
+
+      function pdfRectToCanvasRect(rect) {
+        const scaleX = state.renderSize.width / state.pageSize.width;
+        const scaleY = state.renderSize.height / state.pageSize.height;
+        return {
+          left: rect.left * scaleX,
+          top: (state.pageSize.height - rect.top) * scaleY,
+          width: (rect.right - rect.left) * scaleX,
+          height: (rect.top - rect.bottom) * scaleY,
+        };
+      }
+
+      function renderOverlays() {
+        elements.overlay.replaceChildren();
+        for (const annotation of state.annotations) {
+          const rect = pdfRectToCanvasRect(annotation.rect);
+          const node = document.createElement("div");
+          node.className = `annotation-rect${annotation.index === state.selectedIndex ? " active" : ""}`;
+          node.style.left = `${rect.left}px`;
+          node.style.top = `${rect.top}px`;
+          node.style.width = `${Math.max(1, rect.width)}px`;
+          node.style.height = `${Math.max(1, rect.height)}px`;
+          elements.overlay.append(node);
+        }
+      }
+
+      function renderAnnotationList() {
+        elements.annotationList.replaceChildren();
+        elements.annotationCount.textContent = String(state.annotations.length);
+        if (state.annotations.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = "No annotations on this page.";
+          elements.annotationList.append(empty);
+          return;
+        }
+        for (const annotation of state.annotations) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `annotation-button${annotation.index === state.selectedIndex ? " active" : ""}`;
+          button.textContent = `#${annotation.index} ${annotation.subtypeName} - ${annotation.rect.left.toFixed(0)}, ${annotation.rect.bottom.toFixed(0)}, ${annotation.rect.right.toFixed(0)}, ${annotation.rect.top.toFixed(0)}`;
+          button.addEventListener("click", () => selectAnnotation(annotation.index));
+          elements.annotationList.append(button);
+        }
+      }
+
+      function selectedAnnotation() {
+        return state.annotations.find((annotation) => annotation.index === state.selectedIndex) || null;
+      }
+
+      function selectAnnotation(index) {
+        state.selectedIndex = index;
+        const annotation = selectedAnnotation();
+        if (annotation) {
+          elements.leftInput.value = annotation.rect.left.toFixed(1);
+          elements.bottomInput.value = annotation.rect.bottom.toFixed(1);
+          elements.rightInput.value = annotation.rect.right.toFixed(1);
+          elements.topInput.value = annotation.rect.top.toFixed(1);
+          if (annotation.hasColor) elements.annotationColor.value = rgbaToCss(annotation.colorRgba);
+          if (annotation.contents) elements.contentsInput.value = annotation.contents;
+          if (annotation.uri) elements.uriInput.value = annotation.uri;
+          elements.selectedDetails.textContent = JSON.stringify(annotation, null, 2);
+        } else {
+          elements.selectedDetails.textContent = "No annotation selected.";
+        }
+        renderAnnotationList();
+        renderOverlays();
+        updateControls();
+      }
+
+      async function refreshAfterMutation(message) {
+        state.dirty = true;
+        await renderCurrentPage({ preserveSelection: true });
+        setStatus(message);
+      }
+
+      async function addAnnotation() {
+        const rect = currentRect();
+        const type = elements.annotationType.value;
+        const rgba = colorToRgba(elements.annotationColor.value, type === "highlight" ? 128 : 255);
+        try {
+          if (type === "highlight") {
+            callAnnotation("wasm_pdf_add_highlight_annotation", ["number", "number", "number", "number", "number", "number", "number"], [state.doc.handle, state.pageIndex, rect.left, rect.bottom, rect.right, rect.top, rgba], "Unable to add highlight annotation");
+          } else if (type === "rectangle") {
+            callAnnotation("wasm_pdf_add_rectangle_annotation", ["number", "number", "number", "number", "number", "number", "number", "number"], [state.doc.handle, state.pageIndex, rect.left, rect.bottom, rect.right, rect.top, rgba, numberValue(elements.borderWidthInput)], "Unable to add rectangle annotation");
+          } else if (type === "link") {
+            callAnnotation("wasm_pdf_add_link_annotation", ["number", "number", "number", "number", "number", "number", "string"], [state.doc.handle, state.pageIndex, rect.left, rect.bottom, rect.right, rect.top, elements.uriInput.value], "Unable to add link annotation");
+          } else if (type === "textNote") {
+            callAnnotation("wasm_pdf_add_text_note_annotation", ["number", "number", "number", "number", "string", "number"], [state.doc.handle, state.pageIndex, rect.left, rect.bottom, elements.contentsInput.value, rgba], "Unable to add text note annotation");
+          } else if (type === "freeText") {
+            callAnnotation("wasm_pdf_add_freetext_annotation", ["number", "number", "number", "number", "number", "number", "string", "number", "number", "number", "number"], [state.doc.handle, state.pageIndex, rect.left, rect.bottom, rect.right, rect.top, elements.contentsInput.value, numberValue(elements.fontSizeInput), 0xff000000, rgba, numberValue(elements.borderWidthInput)], "Unable to add FreeText annotation");
+          }
+          state.selectedIndex = annotationCount(state.doc, state.pageIndex) - 1;
+          await refreshAfterMutation("Annotation added.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to add annotation.", true);
+        }
+      }
+
+      async function updateSelectedRect() {
+        const rect = currentRect();
+        try {
+          callAnnotation("wasm_pdf_set_annotation_rect", ["number", "number", "number", "number", "number", "number", "number"], [state.doc.handle, state.pageIndex, state.selectedIndex, rect.left, rect.bottom, rect.right, rect.top], "Unable to update annotation rect");
+          await refreshAfterMutation("Annotation rectangle updated.");
+        } catch (error) { console.error(error); setStatus(error.message, true); }
+      }
+
+      async function updateSelectedColor() {
+        try {
+          callAnnotation("wasm_pdf_set_annotation_color", ["number", "number", "number", "number"], [state.doc.handle, state.pageIndex, state.selectedIndex, colorToRgba(elements.annotationColor.value)], "Unable to update annotation color");
+          await refreshAfterMutation("Annotation color updated.");
+        } catch (error) { console.error(error); setStatus(error.message, true); }
+      }
+
+      async function updateSelectedText() {
+        try {
+          callAnnotation("wasm_pdf_set_annotation_text", ["number", "number", "number", "string"], [state.doc.handle, state.pageIndex, state.selectedIndex, elements.contentsInput.value], "Unable to update annotation text");
+          await refreshAfterMutation("Annotation text updated.");
+        } catch (error) { console.error(error); setStatus(error.message, true); }
+      }
+
+      async function updateSelectedUri() {
+        try {
+          callAnnotation("wasm_pdf_set_annotation_uri", ["number", "number", "number", "string"], [state.doc.handle, state.pageIndex, state.selectedIndex, elements.uriInput.value], "Unable to update annotation URI");
+          await refreshAfterMutation("Annotation URI updated.");
+        } catch (error) { console.error(error); setStatus(error.message, true); }
+      }
+
+      async function deleteSelectedAnnotation() {
+        try {
+          callAnnotation("wasm_pdf_delete_annotation", ["number", "number", "number"], [state.doc.handle, state.pageIndex, state.selectedIndex], "Unable to delete annotation");
+          state.selectedIndex = -1;
+          await refreshAfterMutation("Annotation deleted.");
+        } catch (error) { console.error(error); setStatus(error.message, true); }
+      }
+
+      function downloadBytes(bytes, name) {
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function savePdf() {
+        try {
+          const output = state.doc.save();
+          const base = state.fileName.replace(/\.pdf$/i, "") || "annotated";
+          downloadBytes(output, `${base}-annotations.pdf`);
+          state.dirty = false;
+          updateControls();
+          setStatus("Saved modified PDF.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to save PDF.", true);
+        }
+      }
+
+      async function renderCurrentPage({ preserveSelection = false } = {}) {
+        if (!state.doc || state.rendering) return;
+        const previousSelection = preserveSelection ? state.selectedIndex : -1;
+        state.rendering = true;
+        updateControls();
+        try {
+          state.pageSize = state.doc.pageSize(state.pageIndex);
+          const width = Math.max(1, Math.round(state.pageSize.width * state.zoom));
+          const height = Math.max(1, Math.round(state.pageSize.height * state.zoom));
+          state.renderSize = { width, height };
+          const rendered = state.doc.renderPage({ pageIndex: state.pageIndex, width, height, flags: RENDER_ANNOTATIONS });
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          queryAnnotations();
+          state.selectedIndex = previousSelection >= 0 && previousSelection < state.annotations.length ? previousSelection : -1;
+          elements.emptyState.hidden = true;
+          elements.pageStack.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          renderAnnotationList();
+          renderOverlays();
+          selectAnnotation(state.selectedIndex);
+          setStatus("Rendered annotations.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadFile(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.zoom = 1;
+        state.annotations = [];
+        state.selectedIndex = -1;
+        state.dirty = false;
+        elements.pageStack.hidden = true;
+        elements.emptyState.hidden = false;
+        renderAnnotationList();
+        updateControls();
+        setStatus("Opening PDF...");
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.doc = api.openDocument(bytes);
+          state.pageCount = state.doc.pageCount();
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      elements.fileInput.addEventListener("change", async () => { const [file] = elements.fileInput.files; if (file) await loadFile(file); });
+      elements.prevButton.addEventListener("click", async () => { if (state.pageIndex > 0) { state.pageIndex -= 1; await renderCurrentPage(); } });
+      elements.nextButton.addEventListener("click", async () => { if (state.pageIndex < state.pageCount - 1) { state.pageIndex += 1; await renderCurrentPage(); } });
+      elements.zoomOutButton.addEventListener("click", async () => { state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2))); await renderCurrentPage({ preserveSelection: true }); });
+      elements.zoomResetButton.addEventListener("click", async () => { state.zoom = 1; await renderCurrentPage({ preserveSelection: true }); });
+      elements.zoomInButton.addEventListener("click", async () => { state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2))); await renderCurrentPage({ preserveSelection: true }); });
+      elements.addButton.addEventListener("click", addAnnotation);
+      elements.updateRectButton.addEventListener("click", updateSelectedRect);
+      elements.updateColorButton.addEventListener("click", updateSelectedColor);
+      elements.updateTextButton.addEventListener("click", updateSelectedText);
+      elements.updateUriButton.addEventListener("click", updateSelectedUri);
+      elements.deleteButton.addEventListener("click", deleteSelectedAnnotation);
+      elements.saveButton.addEventListener("click", savePdf);
+      window.addEventListener("beforeunload", () => { closeCurrentDocument(); if (state.api) state.api.destroy(); });
+
+      renderAnnotationList();
+      updateControls();
+    </script>
+  </body>
+</html>

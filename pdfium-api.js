@@ -63,6 +63,7 @@ export const PDFIUM_ERROR_NAMES = Object.freeze({
   59: "form_read_failed",
   60: "form_write_failed",
   61: "redaction_failed",
+  62: "text_layout_failed",
 });
 
 export class PdfiumApiError extends Error {
@@ -89,6 +90,13 @@ function asUint8Array(value, label = "bytes") {
 
 function stringOrDefault(value, fallback) {
   return typeof value === "string" ? value : fallback;
+}
+
+function alignmentValue(value) {
+  if (typeof value === "number") return value;
+  if (value === "center") return 1;
+  if (value === "right") return 2;
+  return 0;
 }
 
 function browserImageGlobals() {
@@ -614,7 +622,19 @@ export class PdfDocument {
     return this;
   }
 
-  addText({ pageIndex = 0, text = "", x = 80, y = 120, fontSize = 16, rgba = 0xff000000 } = {}) {
+  addText(options = {}) {
+    if (
+      Object.hasOwn(options, "width") ||
+      Object.hasOwn(options, "height") ||
+      Object.hasOwn(options, "fontName") ||
+      Object.hasOwn(options, "align") ||
+      Object.hasOwn(options, "lineHeight")
+    ) {
+      this.addTextBox(options);
+      return this;
+    }
+
+    const { pageIndex = 0, text = "", x = 80, y = 120, fontSize = 16, rgba = 0xff000000 } = options;
     this.call(
       "wasm_pdf_add_text_page",
       "number",
@@ -623,6 +643,44 @@ export class PdfDocument {
       "Unable to add text"
     );
     return this;
+  }
+
+  addTextBox({
+    pageIndex = 0,
+    text = "",
+    x = 80,
+    y = 120,
+    width = 0,
+    height = 0,
+    fontSize = 16,
+    rgba = 0xff000000,
+    fontName = "Helvetica",
+    align = "left",
+    lineHeight = 0,
+  } = {}) {
+    const lineCount = this.mod.ccall(
+      "wasm_pdf_add_text_box_page",
+      "number",
+      ["number", "number", "string", "number", "number", "number", "number", "number", "number", "string", "number", "number"],
+      [
+        this.handle,
+        pageIndex,
+        text,
+        x,
+        y,
+        width,
+        height,
+        fontSize,
+        rgba,
+        fontName,
+        alignmentValue(align),
+        lineHeight,
+      ]
+    );
+    if (lineCount < 0) {
+      this.api.throwLastError("Unable to add text box");
+    }
+    return lineCount;
   }
 
   addRgbaImage({

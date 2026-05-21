@@ -425,7 +425,8 @@ Successful responses use this shape:
   type: "addText",
   ok: true,
   payload: {
-    pdfBytes: outputArrayBuffer
+    pdfBytes: outputArrayBuffer,
+    lineCount: 1
   }
 }
 ```
@@ -476,6 +477,32 @@ worker.postMessage(
       x: 80,
       y: 120,
       fontSize: 16,
+      rgba: 0xff003366,
+    },
+  },
+  [inputBytes.buffer]
+);
+```
+
+Add optional text layout fields to wrap text inside a box:
+
+```js
+worker.postMessage(
+  {
+    id: crypto.randomUUID(),
+    type: "addText",
+    payload: {
+      pdfBytes: inputBytes.buffer,
+      text: "A longer note that should wrap inside the box.",
+      pageIndex: 0,
+      x: 72,
+      y: 700,
+      width: 240,
+      height: 96,
+      fontSize: 12,
+      fontName: "Helvetica-Bold",
+      align: "center",
+      lineHeight: 15,
       rgba: 0xff003366,
     },
   },

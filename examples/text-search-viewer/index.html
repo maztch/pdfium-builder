@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Text Search Viewer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #14213d;
+        --muted: #64748b;
+        --line: #d7dfeb;
+        --panel: rgba(255, 255, 255, 0.84);
+        --accent: #1d4ed8;
+        --accent-soft: rgba(37, 99, 235, 0.18);
+        --active: rgba(245, 158, 11, 0.32);
+        --danger: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at 10% 10%, rgba(29, 78, 216, 0.16), transparent 28rem),
+          radial-gradient(circle at 85% 15%, rgba(245, 158, 11, 0.18), transparent 24rem),
+          linear-gradient(135deg, #eff6ff 0%, #fff7ed 100%);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(12px);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        letter-spacing: -0.03em;
+      }
+
+      h1 {
+        font-size: clamp(1.25rem, 2vw, 1.9rem);
+      }
+
+      h2 {
+        margin-bottom: 0.75rem;
+        font-size: 1rem;
+      }
+
+      h3 {
+        margin: 1rem 0 0.5rem;
+        font: 700 0.8rem ui-sans-serif, system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .status {
+        min-height: 1.5rem;
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font: 0.9rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .controls,
+      .search-controls,
+      .flag-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .controls {
+        justify-content: flex-end;
+      }
+
+      input[type="file"] {
+        max-width: 16rem;
+      }
+
+      input[type="search"] {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 0.8rem;
+        padding: 0.65rem 0.75rem;
+        color: var(--ink);
+        background: white;
+        font: 0.95rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.55rem 0.8rem;
+        color: var(--ink);
+        background: white;
+        font: 700 0.88rem ui-sans-serif, system-ui, sans-serif;
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: var(--accent);
+        color: white;
+        background: var(--accent);
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      label {
+        color: var(--muted);
+        font: 0.86rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(22rem, 31rem) minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      aside {
+        min-height: 0;
+        overflow: auto;
+        padding: 1rem;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .panel {
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow: 0 18px 50px rgba(20, 33, 61, 0.08);
+      }
+
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.45rem 0;
+        border-bottom: 1px solid var(--line);
+        font: 0.9rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .metric:last-child {
+        border-bottom: 0;
+      }
+
+      .metric span:first-child {
+        color: var(--muted);
+      }
+
+      .results {
+        display: grid;
+        gap: 0.5rem;
+        max-height: 20rem;
+        overflow: auto;
+      }
+
+      .result-button {
+        width: 100%;
+        border-radius: 0.75rem;
+        text-align: left;
+        white-space: normal;
+      }
+
+      .result-button.active {
+        border-color: #f59e0b;
+        background: var(--active);
+      }
+
+      .page-text {
+        max-height: 24rem;
+        overflow: auto;
+        padding: 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 0.75rem;
+        background: #f8fafc;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: 0.82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .viewer {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 2rem;
+      }
+
+      .canvas-frame {
+        display: grid;
+        place-items: start center;
+        min-height: 100%;
+      }
+
+      .page-stack {
+        position: relative;
+        display: inline-block;
+      }
+
+      canvas {
+        display: block;
+        max-width: none;
+        border: 1px solid #cbd5e1;
+        border-radius: 0.4rem;
+        background: white;
+        box-shadow: 0 24px 70px rgba(20, 33, 61, 0.22);
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .search-rect {
+        position: absolute;
+        border: 2px solid rgba(37, 99, 235, 0.95);
+        background: var(--accent-soft);
+        border-radius: 0.2rem;
+      }
+
+      .search-rect.active {
+        border-color: #f59e0b;
+        background: var(--active);
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.28);
+      }
+
+      .empty {
+        max-width: 38rem;
+        margin: 8vh auto;
+        padding: 2rem;
+        border: 1px dashed var(--line);
+        border-radius: 1rem;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      @media (max-width: 980px) {
+        header {
+          flex-direction: column;
+        }
+
+        .controls {
+          justify-content: flex-start;
+        }
+
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Text Search Viewer</h1>
+          <div class="status" id="status">Load a PDF, search page text, and inspect PDF-space bounding boxes.</div>
+        </div>
+        <div class="controls">
+          <input id="fileInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Search Current Page</h2>
+            <input id="searchInput" type="search" placeholder="Search text on this page" disabled>
+            <div class="flag-row" style="margin-top: 0.75rem;">
+              <label><input id="matchCase" type="checkbox" disabled> Match case</label>
+              <label><input id="wholeWord" type="checkbox" disabled> Whole word</label>
+              <label><input id="consecutive" type="checkbox" disabled> Consecutive</label>
+            </div>
+            <div class="search-controls" style="margin-top: 0.75rem;">
+              <button id="searchButton" class="primary" type="button" disabled>Search</button>
+              <button id="clearButton" type="button" disabled>Clear</button>
+            </div>
+            <div class="metric" style="margin-top: 0.75rem;"><span>Matches</span><strong id="matchCount">0</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Results</h2>
+            <div id="results" class="results"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Extracted Page Text</h2>
+            <pre id="pageText" class="page-text">Load a PDF to inspect text.</pre>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>Select a PDF file from your machine. Search results will be drawn as overlays on the rendered page.</p>
+            </div>
+            <div id="pageStack" class="page-stack" hidden>
+              <canvas id="pageCanvas"></canvas>
+              <div id="overlay" class="overlay"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const SEARCH_FLAGS = {
+        matchCase: 0x01,
+        wholeWord: 0x02,
+        consecutive: 0x04,
+      };
+
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        pageSize: null,
+        renderSize: null,
+        zoom: 1,
+        rendering: false,
+        matches: [],
+        activeMatchIndex: -1,
+      };
+
+      const elements = {
+        fileInput: document.getElementById("fileInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        searchInput: document.getElementById("searchInput"),
+        matchCase: document.getElementById("matchCase"),
+        wholeWord: document.getElementById("wholeWord"),
+        consecutive: document.getElementById("consecutive"),
+        searchButton: document.getElementById("searchButton"),
+        clearButton: document.getElementById("clearButton"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        matchCount: document.getElementById("matchCount"),
+        results: document.getElementById("results"),
+        pageText: document.getElementById("pageText"),
+        emptyState: document.getElementById("emptyState"),
+        pageStack: document.getElementById("pageStack"),
+        canvas: document.getElementById("pageCanvas"),
+        overlay: document.getElementById("overlay"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 1;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+        elements.searchInput.disabled = !hasDocument || state.rendering;
+        elements.matchCase.disabled = !hasDocument || state.rendering;
+        elements.wholeWord.disabled = !hasDocument || state.rendering;
+        elements.consecutive.disabled = !hasDocument || state.rendering;
+        elements.searchButton.disabled = !hasDocument || state.rendering || elements.searchInput.value.trim() === "";
+        elements.clearButton.disabled = !hasDocument || state.rendering || (elements.searchInput.value === "" && state.matches.length === 0);
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) {
+          state.doc.close();
+          state.doc = null;
+        }
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({
+            locateFile(file) {
+              return new URL(`../../dist/${file}`, import.meta.url).href;
+            },
+          });
+        }
+        return state.api;
+      }
+
+      function searchFlags() {
+        let flags = 0;
+        if (elements.matchCase.checked) flags |= SEARCH_FLAGS.matchCase;
+        if (elements.wholeWord.checked) flags |= SEARCH_FLAGS.wholeWord;
+        if (elements.consecutive.checked) flags |= SEARCH_FLAGS.consecutive;
+        return flags;
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        const canvas = elements.canvas;
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        elements.overlay.style.width = `${width}px`;
+        elements.overlay.style.height = `${height}px`;
+
+        const ctx = canvas.getContext("2d");
+        const imageData = new ImageData(new Uint8ClampedArray(rgbaBytes), width, height);
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      function pdfRectToCanvasRect(rect) {
+        const pageSize = state.pageSize;
+        const renderSize = state.renderSize;
+        const scaleX = renderSize.width / pageSize.width;
+        const scaleY = renderSize.height / pageSize.height;
+        const left = rect.left * scaleX;
+        const top = (pageSize.height - rect.top) * scaleY;
+        const width = (rect.right - rect.left) * scaleX;
+        const height = (rect.top - rect.bottom) * scaleY;
+        return { left, top, width, height };
+      }
+
+      function renderOverlays() {
+        elements.overlay.replaceChildren();
+        for (let matchIndex = 0; matchIndex < state.matches.length; matchIndex += 1) {
+          const match = state.matches[matchIndex];
+          for (const rect of match.rects) {
+            const canvasRect = pdfRectToCanvasRect(rect);
+            const node = document.createElement("div");
+            node.className = `search-rect${matchIndex === state.activeMatchIndex ? " active" : ""}`;
+            node.style.left = `${canvasRect.left}px`;
+            node.style.top = `${canvasRect.top}px`;
+            node.style.width = `${Math.max(1, canvasRect.width)}px`;
+            node.style.height = `${Math.max(1, canvasRect.height)}px`;
+            elements.overlay.append(node);
+          }
+        }
+      }
+
+      function renderResults() {
+        elements.results.replaceChildren();
+        elements.matchCount.textContent = String(state.matches.length);
+        if (state.matches.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = elements.searchInput.value.trim() ? "No matches on this page." : "Run a search to see matches.";
+          elements.results.append(empty);
+          return;
+        }
+
+        for (let index = 0; index < state.matches.length; index += 1) {
+          const match = state.matches[index];
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `result-button${index === state.activeMatchIndex ? " active" : ""}`;
+          button.textContent = `Match ${index + 1}: char ${match.startIndex}, length ${match.charCount}, rects ${match.rects.length}`;
+          button.addEventListener("click", () => {
+            state.activeMatchIndex = index;
+            renderResults();
+            renderOverlays();
+          });
+          elements.results.append(button);
+        }
+      }
+
+      function clearSearch() {
+        state.matches = [];
+        state.activeMatchIndex = -1;
+        elements.searchInput.value = "";
+        renderResults();
+        renderOverlays();
+        updateControls();
+      }
+
+      function refreshPageText() {
+        try {
+          const text = state.doc.pageText(state.pageIndex);
+          elements.pageText.textContent = text || "No extractable text on this page.";
+        } catch (error) {
+          elements.pageText.textContent = error instanceof Error ? error.message : "Unable to extract page text.";
+        }
+      }
+
+      async function runSearch() {
+        if (!state.doc) return;
+        const query = elements.searchInput.value.trim();
+        if (!query) {
+          clearSearch();
+          return;
+        }
+
+        try {
+          state.matches = state.doc.searchPageText(state.pageIndex, query, searchFlags());
+          state.activeMatchIndex = state.matches.length > 0 ? 0 : -1;
+          renderResults();
+          renderOverlays();
+          setStatus(`Found ${state.matches.length} match${state.matches.length === 1 ? "" : "es"} on page ${state.pageIndex + 1}.`);
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to search page text.", true);
+        } finally {
+          updateControls();
+        }
+      }
+
+      async function renderCurrentPage({ keepSearch = false } = {}) {
+        if (!state.doc || state.rendering) return;
+
+        state.rendering = true;
+        updateControls();
+        try {
+          state.pageSize = state.doc.pageSize(state.pageIndex);
+          const width = Math.max(1, Math.round(state.pageSize.width * state.zoom));
+          const height = Math.max(1, Math.round(state.pageSize.height * state.zoom));
+          state.renderSize = { width, height };
+          const rendered = state.doc.renderPage({
+            pageIndex: state.pageIndex,
+            width,
+            height,
+            flags: RENDER_ANNOTATIONS,
+          });
+
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.pageStack.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          refreshPageText();
+          if (keepSearch && elements.searchInput.value.trim()) {
+            state.matches = state.doc.searchPageText(state.pageIndex, elements.searchInput.value.trim(), searchFlags());
+            state.activeMatchIndex = state.matches.length > 0 ? 0 : -1;
+          } else {
+            state.matches = [];
+            state.activeMatchIndex = -1;
+          }
+          renderResults();
+          renderOverlays();
+          setStatus("Rendered page.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadFile(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.pageSize = null;
+        state.renderSize = null;
+        state.zoom = 1;
+        state.matches = [];
+        state.activeMatchIndex = -1;
+        elements.pageStack.hidden = true;
+        elements.emptyState.hidden = false;
+        elements.searchInput.value = "";
+        elements.pageText.textContent = "Load a PDF to inspect text.";
+        renderResults();
+        updateControls();
+        setStatus("Opening PDF...");
+
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.doc = api.openDocument(bytes);
+          state.pageCount = state.doc.pageCount();
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      elements.fileInput.addEventListener("change", async () => {
+        const [file] = elements.fileInput.files;
+        if (file) await loadFile(file);
+      });
+
+      elements.prevButton.addEventListener("click", async () => {
+        if (state.pageIndex > 0) {
+          state.pageIndex -= 1;
+          await renderCurrentPage({ keepSearch: true });
+        }
+      });
+
+      elements.nextButton.addEventListener("click", async () => {
+        if (state.pageIndex < state.pageCount - 1) {
+          state.pageIndex += 1;
+          await renderCurrentPage({ keepSearch: true });
+        }
+      });
+
+      elements.zoomOutButton.addEventListener("click", async () => {
+        state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2)));
+        await renderCurrentPage({ keepSearch: true });
+      });
+
+      elements.zoomResetButton.addEventListener("click", async () => {
+        state.zoom = 1;
+        await renderCurrentPage({ keepSearch: true });
+      });
+
+      elements.zoomInButton.addEventListener("click", async () => {
+        state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2)));
+        await renderCurrentPage({ keepSearch: true });
+      });
+
+      elements.searchInput.addEventListener("input", updateControls);
+      elements.searchInput.addEventListener("keydown", async (event) => {
+        if (event.key === "Enter") await runSearch();
+      });
+      elements.searchButton.addEventListener("click", runSearch);
+      elements.clearButton.addEventListener("click", clearSearch);
+      for (const checkbox of [elements.matchCase, elements.wholeWord, elements.consecutive]) {
+        checkbox.addEventListener("change", async () => {
+          if (elements.searchInput.value.trim()) await runSearch();
+        });
+      }
+
+      window.addEventListener("beforeunload", () => {
+        closeCurrentDocument();
+        if (state.api) state.api.destroy();
+      });
+
+      renderResults();
+      updateControls();
+    </script>
+  </body>
+</html>

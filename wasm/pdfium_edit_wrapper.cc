@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -107,6 +108,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_FORM_READ_FAILED = 59,
   WASM_PDF_ERROR_FORM_WRITE_FAILED = 60,
   WASM_PDF_ERROR_REDACTION_FAILED = 61,
+  WASM_PDF_ERROR_TEXT_LAYOUT_FAILED = 62,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -714,6 +716,19 @@ bool IsValidImagePlacement(double x,
   return std::isfinite(x) && std::isfinite(y) &&
          std::isfinite(display_width) && std::isfinite(display_height) &&
          display_width > 0 && display_height > 0;
+}
+
+bool IsValidTextPlacement(double x, double y, double font_size) {
+  return std::isfinite(x) && std::isfinite(y) &&
+         std::isfinite(font_size) && font_size > 0;
+}
+
+bool IsUtf16WrapSpace(char16_t value) {
+  return value == u' ' || value == u'\t' || value == u'\f' || value == u'\v';
+}
+
+bool IsUtf16LineBreak(char16_t value) {
+  return value == u'\n' || value == u'\r';
 }
 
 uint32_t ReadBigEndianUint32(const uint8_t* data) {
@@ -3779,53 +3794,136 @@ int wasm_pdf_import_pages(uintptr_t src_handle,
   return 1;
 }
 
-int wasm_pdf_add_text_page(uintptr_t handle,
-                           int page_index,
-                           const char* text_utf8,
-                           double x,
-                           double y,
-                           double font_size,
-                           uint32_t rgba) {
-  if (!g_pdfium_initialized) {
-    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
-    return 0;
-  }
-  if (!text_utf8) {
-    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
-    return 0;
-  }
+bool MeasureTextWidth(FPDF_DOCUMENT doc,
+                      const char* font_name,
+                      const std::u16string& text,
+                      double font_size,
+                      double* width) {
+  if (!width) return false;
+  *width = 0;
+  if (text.empty()) return true;
 
-  auto it = g_docs.find(handle);
-  if (it == g_docs.end() || !it->second->doc) {
-    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
-    return 0;
-  }
-
-  std::u16string utf16;
-  if (!DecodeUtf8ToUtf16(text_utf8, &utf16)) {
-    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
-    return 0;
-  }
-
-  FPDF_DOCUMENT doc = it->second->doc;
-  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
-  if (!page) {
-    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
-    return 0;
-  }
-
-  FPDF_PAGEOBJECT text_obj = FPDFPageObj_NewTextObj(doc, "Helvetica", static_cast<float>(font_size));
+  FPDF_PAGEOBJECT text_obj =
+      FPDFPageObj_NewTextObj(doc, font_name, static_cast<float>(font_size));
   if (!text_obj) {
-    FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_CREATE_TEXT_FAILED);
-    return 0;
+    return false;
   }
 
-  if (!FPDFText_SetText(text_obj, reinterpret_cast<const unsigned short*>(utf16.c_str()))) {
+  if (!FPDFText_SetText(text_obj, reinterpret_cast<const unsigned short*>(text.c_str()))) {
     FPDFPageObj_Destroy(text_obj);
-    FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_SET_TEXT_FAILED);
-    return 0;
+    return false;
+  }
+
+  float left = 0;
+  float bottom = 0;
+  float right = 0;
+  float top = 0;
+  if (!FPDFPageObj_GetBounds(text_obj, &left, &bottom, &right, &top)) {
+    FPDFPageObj_Destroy(text_obj);
+    SetLastError(WASM_PDF_ERROR_TEXT_LAYOUT_FAILED);
+    return false;
+  }
+
+  *width = std::max(0.0, static_cast<double>(right - left));
+  FPDFPageObj_Destroy(text_obj);
+  return true;
+}
+
+bool WrapTextLines(FPDF_DOCUMENT doc,
+                   const char* font_name,
+                   const std::u16string& text,
+                   double font_size,
+                   double max_width,
+                   std::vector<std::u16string>* lines) {
+  if (!lines) return false;
+  lines->clear();
+
+  std::vector<std::u16string> paragraphs;
+  std::u16string current_paragraph;
+  for (size_t i = 0; i < text.size(); ++i) {
+    const char16_t value = text[i];
+    if (IsUtf16LineBreak(value)) {
+      paragraphs.push_back(current_paragraph);
+      current_paragraph.clear();
+      if (value == u'\r' && i + 1 < text.size() && text[i + 1] == u'\n') {
+        ++i;
+      }
+    } else {
+      current_paragraph.push_back(value);
+    }
+  }
+  paragraphs.push_back(current_paragraph);
+
+  if (max_width <= 0) {
+    *lines = std::move(paragraphs);
+    return true;
+  }
+
+  for (const std::u16string& paragraph : paragraphs) {
+    std::vector<std::u16string> words;
+    size_t pos = 0;
+    while (pos < paragraph.size()) {
+      while (pos < paragraph.size() && IsUtf16WrapSpace(paragraph[pos])) {
+        ++pos;
+      }
+      const size_t start = pos;
+      while (pos < paragraph.size() && !IsUtf16WrapSpace(paragraph[pos])) {
+        ++pos;
+      }
+      if (pos > start) {
+        words.push_back(paragraph.substr(start, pos - start));
+      }
+    }
+
+    if (words.empty()) {
+      lines->push_back(std::u16string());
+      continue;
+    }
+
+    std::u16string line;
+    for (const std::u16string& word : words) {
+      std::u16string candidate = line.empty() ? word : line + u" " + word;
+      double candidate_width = 0;
+      if (!MeasureTextWidth(doc, font_name, candidate, font_size, &candidate_width)) {
+        return false;
+      }
+
+      if (line.empty() || candidate_width <= max_width) {
+        line = std::move(candidate);
+        continue;
+      }
+
+      lines->push_back(line);
+      line = word;
+    }
+
+    lines->push_back(line);
+  }
+
+  return true;
+}
+
+bool InsertTextObject(FPDF_DOCUMENT doc,
+                      FPDF_PAGE page,
+                      const char* font_name,
+                      const std::u16string& text,
+                      double x,
+                      double y,
+                      double font_size,
+                      uint32_t rgba) {
+  FPDF_PAGEOBJECT text_obj =
+      FPDFPageObj_NewTextObj(doc, font_name, static_cast<float>(font_size));
+  if (!text_obj) {
+    SetLastError(WASM_PDF_ERROR_CREATE_TEXT_FAILED);
+    return false;
+  }
+
+  if (!FPDFText_SetText(text_obj, reinterpret_cast<const unsigned short*>(text.c_str()))) {
+    FPDFPageObj_Destroy(text_obj);
+    SetLastError(WASM_PDF_ERROR_SET_TEXT_FAILED);
+    return false;
   }
 
   const unsigned int a = (rgba >> 24) & 0xFF;
@@ -3835,29 +3933,181 @@ int wasm_pdf_add_text_page(uintptr_t handle,
 
   if (!FPDFPageObj_SetFillColor(text_obj, r, g, b, a)) {
     FPDFPageObj_Destroy(text_obj);
-    FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_SET_COLOR_FAILED);
-    return 0;
+    return false;
   }
 
-  FPDFPageObj_Transform(text_obj, 1, 0, 0, 1, static_cast<float>(x), static_cast<float>(y));
+  FPDFPageObj_Transform(
+      text_obj, 1, 0, 0, 1, static_cast<float>(x), static_cast<float>(y));
 
   if (!FPDFPage_InsertObject(page, text_obj)) {
     FPDFPageObj_Destroy(text_obj);
-    FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
-    return 0;
+    return false;
+  }
+
+  return true;
+}
+
+int AddTextBoxToPage(uintptr_t handle,
+                     int page_index,
+                     const char* text_utf8,
+                     double x,
+                     double y,
+                     double width,
+                     double height,
+                     double font_size,
+                     uint32_t rgba,
+                     const char* font_name_utf8,
+                     int align,
+                     double line_height) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+  if (!text_utf8 || !IsValidTextPlacement(x, y, font_size) ||
+      (width < 0 || !std::isfinite(width)) ||
+      (height < 0 || !std::isfinite(height)) ||
+      (line_height < 0 || !std::isfinite(line_height)) ||
+      align < 0 || align > 2) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return -1;
+  }
+
+  auto it = g_docs.find(handle);
+  if (it == g_docs.end() || !it->second->doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  std::u16string utf16;
+  if (!DecodeUtf8ToUtf16(text_utf8, &utf16)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return -1;
+  }
+
+  std::u16string ignored_font_name;
+  if (font_name_utf8 && font_name_utf8[0] &&
+      !DecodeUtf8ToUtf16(font_name_utf8, &ignored_font_name)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_UTF8);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = it->second->doc;
+  const char* font_name =
+      (font_name_utf8 && font_name_utf8[0]) ? font_name_utf8 : "Helvetica";
+
+  std::vector<std::u16string> lines;
+  if (!WrapTextLines(doc, font_name, utf16, font_size, width, &lines)) {
+    return -1;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return -1;
+  }
+
+  const double effective_line_height =
+      line_height > 0 ? line_height : font_size * 1.2;
+  int inserted_count = 0;
+  int visual_line_index = 0;
+  for (const std::u16string& line : lines) {
+    const double baseline_offset = visual_line_index * effective_line_height;
+    if (height > 0 && baseline_offset > height) {
+      break;
+    }
+    ++visual_line_index;
+
+    if (line.empty()) {
+      continue;
+    }
+
+    double line_width = 0;
+    if (!MeasureTextWidth(doc, font_name, line, font_size, &line_width)) {
+      FPDF_ClosePage(page);
+      return -1;
+    }
+
+    double line_x = x;
+    if (width > 0 && align == 1) {
+      line_x = x + (width - line_width) / 2.0;
+    } else if (width > 0 && align == 2) {
+      line_x = x + width - line_width;
+    }
+
+    if (!InsertTextObject(
+            doc,
+            page,
+            font_name,
+            line,
+            line_x,
+            y - baseline_offset,
+            font_size,
+            rgba)) {
+      FPDF_ClosePage(page);
+      return -1;
+    }
+    ++inserted_count;
   }
 
   if (!FPDFPage_GenerateContent(page)) {
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
-    return 0;
+    return -1;
   }
 
   FPDF_ClosePage(page);
   ClearLastError();
-  return 1;
+  return inserted_count;
+}
+
+int wasm_pdf_add_text_page(uintptr_t handle,
+                           int page_index,
+                           const char* text_utf8,
+                           double x,
+                           double y,
+                           double font_size,
+                           uint32_t rgba) {
+  const int inserted_count = AddTextBoxToPage(handle,
+                                             page_index,
+                                             text_utf8,
+                                             x,
+                                             y,
+                                             0,
+                                             0,
+                                             font_size,
+                                             rgba,
+                                             "Helvetica",
+                                             0,
+                                             0);
+  return inserted_count >= 0 ? 1 : 0;
+}
+
+int wasm_pdf_add_text_box_page(uintptr_t handle,
+                               int page_index,
+                               const char* text_utf8,
+                               double x,
+                               double y,
+                               double width,
+                               double height,
+                               double font_size,
+                               uint32_t rgba,
+                               const char* font_name_utf8,
+                               int align,
+                               double line_height) {
+  return AddTextBoxToPage(handle,
+                          page_index,
+                          text_utf8,
+                          x,
+                          y,
+                          width,
+                          height,
+                          font_size,
+                          rgba,
+                          font_name_utf8,
+                          align,
+                          line_height);
 }
 
 int wasm_pdf_add_rgba_image_page(uintptr_t handle,

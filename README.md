@@ -20,7 +20,7 @@ Build PDFium to WebAssembly, expose a custom C/C++ wrapper API, and call it from
 - `wasm/pdfium_wasm_platform_stub.cc`: WASM platform shim needed at link time.
 - `pdfium-api.js`: direct ES module API with balanced native pointer and document cleanup.
 - `worker/pdfium-worker.js`: module worker with a stable message protocol.
-- `examples/browser_add_text_example.js`: browser usage example.
+- `examples/`: browser usage examples, each in its own subfolder.
 - `tests/smoke_node.cjs`: Node smoke test.
 - `dist/`: generated `pdfium.js` and `pdfium.wasm`.
 
@@ -45,6 +45,8 @@ Required tools:
 - [Build Guide](docs/BUILD.md): prerequisites, bootstrap, build commands, tuning, clean rebuilds.
 - [API Reference](docs/API.md): exported `wasm_pdf_*` functions, error codes, constants, binary result formats.
 - [Examples](docs/EXAMPLES.md): task-oriented copy-paste flows for worker and direct WASM usage.
+- [Example Files](examples/README.md): runnable sample files and per-sample notes.
+- [Viewer Samples](docs/VIEWER_SAMPLES.md): staged browser viewer demos from basic rendering to editing workbenches.
 - [Feature Matrix](docs/FEATURE_MATRIX.md): capability status across native API, worker support, tests, and docs.
 - [Usage Guide](docs/USAGE.md): direct JS wrapper, raw lifecycle, browser flow, memory cleanup, examples.
 - [Worker Guide](docs/WORKER.md): module worker setup, message protocol, request examples.
@@ -58,7 +60,7 @@ Required tools:
 
 - Open PDF bytes, save copies, and close handles.
 - Query page count, page size, rotation, boxes, permissions, metadata, outline/bookmarks, embedded attachments, AcroForm fields/widgets/options, annotations, page objects, text, and text search rectangles.
-- Mutate page rotation, page boxes, page size, metadata, embedded attachments, AcroForm field values, checkbox/radio state, and combo/list selection, pages, page objects, annotations, text insertion/redaction, and RGBA/JPEG/PNG images.
+- Mutate page rotation, page boxes, page size, metadata, embedded attachments, AcroForm field values, checkbox/radio state, and combo/list selection, pages, page objects, annotations, text insertion/redaction, wrapped/aligned text, and RGBA/JPEG/PNG images.
 - Decode arbitrary browser-supported image formats to RGBA with `createImageBitmap`/canvas helpers before insertion.
 - Render full pages or PDF-space page areas to RGBA buffers.
 - Use direct JS methods for common operations without manually managing `_malloc`, output pointers, or document handles.

@@ -63,6 +63,7 @@ const ERROR_NAMES = Object.freeze({
   59: "form_read_failed",
   60: "form_write_failed",
   61: "redaction_failed",
+  62: "text_layout_failed",
 });
 
 class PdfiumWorkerError extends Error {
@@ -150,6 +151,13 @@ function numberOrDefault(value, fallback) {
 
 function stringOrDefault(value, fallback) {
   return typeof value === "string" ? value : fallback;
+}
+
+function alignmentValue(value) {
+  if (typeof value === "number") return value;
+  if (value === "center") return 1;
+  if (value === "right") return 2;
+  return 0;
 }
 
 function arrayOrDefault(value, fallback) {
@@ -505,11 +513,14 @@ async function addText(payload = {}) {
   const mod = await getModule();
   const inputBytes = asUint8Array(payload.pdfBytes);
   const text = stringOrDefault(payload.text, "");
+  const useTextBox =
+    Object.hasOwn(payload, "width") ||
+    Object.hasOwn(payload, "height") ||
+    Object.hasOwn(payload, "fontName") ||
+    Object.hasOwn(payload, "align") ||
+    Object.hasOwn(payload, "lineHeight");
 
   let inputPtr = 0;
-  let outPtrPtr = 0;
-  let outSizePtr = 0;
-  let outPtr = 0;
   let handle = 0;
 
   try {
@@ -525,46 +536,46 @@ async function addText(payload = {}) {
     );
     if (!handle) throwPdfiumError(mod, "Unable to open PDF");
 
-    const added = mod.ccall(
-      "wasm_pdf_add_text_page",
+    const lineCount = mod.ccall(
+      useTextBox ? "wasm_pdf_add_text_box_page" : "wasm_pdf_add_text_page",
       "number",
-      ["number", "number", "string", "number", "number", "number", "number"],
-      [
-        handle,
-        numberOrDefault(payload.pageIndex, 0),
-        text,
-        numberOrDefault(payload.x, 80),
-        numberOrDefault(payload.y, 120),
-        numberOrDefault(payload.fontSize, 16),
-        numberOrDefault(payload.rgba, 0xff000000),
-      ]
+      useTextBox
+        ? ["number", "number", "string", "number", "number", "number", "number", "number", "number", "string", "number", "number"]
+        : ["number", "number", "string", "number", "number", "number", "number"],
+      useTextBox
+        ? [
+            handle,
+            numberOrDefault(payload.pageIndex, 0),
+            text,
+            numberOrDefault(payload.x, 80),
+            numberOrDefault(payload.y, 120),
+            numberOrDefault(payload.width, 0),
+            numberOrDefault(payload.height, 0),
+            numberOrDefault(payload.fontSize, 16),
+            numberOrDefault(payload.rgba, 0xff000000),
+            stringOrDefault(payload.fontName, "Helvetica"),
+            alignmentValue(payload.align),
+            numberOrDefault(payload.lineHeight, 0),
+          ]
+        : [
+            handle,
+            numberOrDefault(payload.pageIndex, 0),
+            text,
+            numberOrDefault(payload.x, 80),
+            numberOrDefault(payload.y, 120),
+            numberOrDefault(payload.fontSize, 16),
+            numberOrDefault(payload.rgba, 0xff000000),
+          ]
     );
-    if (!added) throwPdfiumError(mod, "Unable to add text");
+    if (useTextBox ? lineCount < 0 : !lineCount) throwPdfiumError(mod, "Unable to add text");
 
-    outPtrPtr = mod._malloc(4);
-    outSizePtr = mod._malloc(4);
-    if (!outPtrPtr || !outSizePtr) throw new PdfiumWorkerError("Unable to allocate output PDF pointers", 3);
-
-    const saved = mod.ccall(
-      "wasm_pdf_save_copy",
-      "number",
-      ["number", "number", "number"],
-      [handle, outPtrPtr, outSizePtr]
-    );
-    if (!saved) throwPdfiumError(mod, "Unable to save PDF");
-
-    outPtr = mod.getValue(outPtrPtr, "i32");
-    const outSize = mod.getValue(outSizePtr, "i32");
-    if (!outPtr || !outSize) throw new PdfiumWorkerError("Saved PDF output is empty", 12);
-
-    const outBytes = mod.HEAPU8.slice(outPtr, outPtr + outSize);
-    return { pdfBytes: outBytes.buffer };
+    return {
+      ...saveDocumentBytes(mod, handle),
+      lineCount: useTextBox ? lineCount : 1,
+    };
   } finally {
-    if (outPtr) mod.ccall("wasm_pdf_free_buffer", null, ["number"], [outPtr]);
     if (handle) mod.ccall("wasm_pdf_close", null, ["number"], [handle]);
     if (inputPtr) mod._free(inputPtr);
-    if (outPtrPtr) mod._free(outPtrPtr);
-    if (outSizePtr) mod._free(outSizePtr);
   }
 }
 

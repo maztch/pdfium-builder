@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Image Insertion</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #152238;
+        --muted: #667085;
+        --line: #d8deea;
+        --panel: rgba(255, 255, 255, 0.86);
+        --accent: #b45309;
+        --accent-soft: rgba(251, 191, 36, 0.25);
+        --ok: #047857;
+        --danger: #b42318;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(180, 83, 9, 0.18), transparent 30rem),
+          radial-gradient(circle at 90% 18%, rgba(4, 120, 87, 0.14), transparent 26rem),
+          linear-gradient(135deg, #fffbeb 0%, #ecfdf5 100%);
+      }
+
+      .shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+      header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(12px); }
+      h1, h2 { margin: 0; letter-spacing: -0.03em; }
+      h1 { font-size: clamp(1.25rem, 2vw, 1.9rem); }
+      h2 { margin-bottom: 0.75rem; font-size: 1rem; }
+      .status { min-height: 1.5rem; margin-top: 0.35rem; color: var(--muted); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .status.error { color: var(--danger); }
+      .controls, .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      .controls { justify-content: flex-end; }
+      input, button { font: 0.88rem ui-sans-serif, system-ui, sans-serif; }
+      input[type="file"] { max-width: 16rem; }
+      input[type="number"] { width: 7rem; border: 1px solid var(--line); border-radius: 0.65rem; padding: 0.55rem 0.65rem; color: var(--ink); background: white; }
+      label { display: grid; gap: 0.25rem; color: var(--muted); font: 0.82rem ui-sans-serif, system-ui, sans-serif; }
+      button { border: 1px solid var(--line); border-radius: 999px; padding: 0.55rem 0.8rem; color: var(--ink); background: white; font-weight: 700; cursor: pointer; }
+      button.primary { border-color: var(--accent); color: white; background: var(--accent); }
+      button.save { border-color: var(--ok); color: white; background: var(--ok); }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { cursor: not-allowed; opacity: 0.45; }
+      main { display: grid; grid-template-columns: minmax(22rem, 30rem) minmax(0, 1fr); min-height: 0; }
+      aside { min-height: 0; overflow: auto; padding: 1rem; border-right: 1px solid var(--line); background: var(--panel); }
+      .panel { margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.82); box-shadow: 0 18px 50px rgba(21, 34, 56, 0.08); }
+      .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+      .metric { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .metric:last-child { border-bottom: 0; }
+      .metric span:first-child { color: var(--muted); }
+      .image-preview { display: grid; place-items: center; min-height: 8rem; border: 1px dashed var(--line); border-radius: 0.8rem; background: #fffaf0; overflow: hidden; }
+      .image-preview img { max-width: 100%; max-height: 12rem; display: block; }
+      .viewer { min-width: 0; min-height: 0; overflow: auto; padding: 2rem; }
+      .canvas-frame { display: grid; place-items: start center; min-height: 100%; }
+      .page-stack { position: relative; display: inline-block; }
+      canvas { display: block; max-width: none; border: 1px solid #cbd5e1; border-radius: 0.4rem; background: white; box-shadow: 0 24px 70px rgba(21, 34, 56, 0.22); cursor: crosshair; }
+      .overlay { position: absolute; inset: 0; pointer-events: none; }
+      .placement-rect { position: absolute; border: 2px solid rgba(180, 83, 9, 0.95); background: var(--accent-soft); border-radius: 0.2rem; box-shadow: 0 0 0 2px rgba(180, 83, 9, 0.16); }
+      .empty { max-width: 38rem; margin: 8vh auto; padding: 2rem; border: 1px dashed var(--line); border-radius: 1rem; text-align: center; background: rgba(255, 255, 255, 0.72); }
+      @media (max-width: 980px) { header { flex-direction: column; } .controls { justify-content: flex-start; } main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Image Insertion</h1>
+          <div class="status" id="status">Load a PDF and an image, choose placement, insert, and save.</div>
+        </div>
+        <div class="controls">
+          <input id="pdfInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+          <button id="saveButton" class="save" type="button" disabled>Save PDF</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Image</h2>
+            <input id="imageInput" type="file" accept="image/*">
+            <div class="image-preview" style="margin-top: 0.75rem;">
+              <span id="imageEmpty" class="status">Choose an image to decode.</span>
+              <img id="imagePreview" alt="Selected image preview" hidden>
+            </div>
+            <div class="metric"><span>Decoded size</span><strong id="imageSize">-</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Placement</h2>
+            <div class="grid-2">
+              <label>X <input id="xInput" type="number" value="72" step="1"></label>
+              <label>Y <input id="yInput" type="number" value="120" step="1"></label>
+              <label>Width <input id="widthInput" type="number" value="160" min="1" step="1"></label>
+              <label>Height <input id="heightInput" type="number" value="120" min="1" step="1"></label>
+            </div>
+            <div class="button-row" style="margin-top: 0.75rem;">
+              <button id="fitWidthButton" type="button" disabled>Fit half page</button>
+              <button id="insertButton" class="primary" type="button" disabled>Insert image</button>
+            </div>
+            <p class="status">Click the rendered page to set the image bottom-left position.</p>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>Select a PDF, then upload an image. The placement rectangle previews where the image will be inserted.</p>
+            </div>
+            <div id="pageStack" class="page-stack" hidden>
+              <canvas id="pageCanvas"></canvas>
+              <div id="overlay" class="overlay"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createDecodedImagePayload, createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        pageSize: null,
+        renderSize: null,
+        zoom: 1,
+        rendering: false,
+        decodedImage: null,
+        dirty: false,
+      };
+
+      const elements = {
+        pdfInput: document.getElementById("pdfInput"),
+        imageInput: document.getElementById("imageInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        saveButton: document.getElementById("saveButton"),
+        fitWidthButton: document.getElementById("fitWidthButton"),
+        insertButton: document.getElementById("insertButton"),
+        xInput: document.getElementById("xInput"),
+        yInput: document.getElementById("yInput"),
+        widthInput: document.getElementById("widthInput"),
+        heightInput: document.getElementById("heightInput"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        imageSize: document.getElementById("imageSize"),
+        imageEmpty: document.getElementById("imageEmpty"),
+        imagePreview: document.getElementById("imagePreview"),
+        emptyState: document.getElementById("emptyState"),
+        pageStack: document.getElementById("pageStack"),
+        canvas: document.getElementById("pageCanvas"),
+        overlay: document.getElementById("overlay"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        const hasImage = Boolean(state.decodedImage);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 1;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+        elements.fitWidthButton.disabled = !hasDocument || !hasImage || state.rendering;
+        elements.insertButton.disabled = !hasDocument || !hasImage || state.rendering;
+        elements.saveButton.disabled = !hasDocument || state.rendering || !state.dirty;
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) {
+          state.doc.close();
+          state.doc = null;
+        }
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({
+            locateFile(file) {
+              return new URL(`../../dist/${file}`, import.meta.url).href;
+            },
+          });
+        }
+        return state.api;
+      }
+
+      function placement() {
+        return {
+          x: Number(elements.xInput.value),
+          y: Number(elements.yInput.value),
+          width: Number(elements.widthInput.value),
+          height: Number(elements.heightInput.value),
+        };
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        elements.canvas.width = width;
+        elements.canvas.height = height;
+        elements.canvas.style.width = `${width}px`;
+        elements.canvas.style.height = `${height}px`;
+        elements.overlay.style.width = `${width}px`;
+        elements.overlay.style.height = `${height}px`;
+        const ctx = elements.canvas.getContext("2d");
+        ctx.putImageData(new ImageData(new Uint8ClampedArray(rgbaBytes), width, height), 0, 0);
+      }
+
+      function pdfRectToCanvasRect({ left, bottom, right, top }) {
+        const scaleX = state.renderSize.width / state.pageSize.width;
+        const scaleY = state.renderSize.height / state.pageSize.height;
+        return {
+          left: left * scaleX,
+          top: (state.pageSize.height - top) * scaleY,
+          width: (right - left) * scaleX,
+          height: (top - bottom) * scaleY,
+        };
+      }
+
+      function renderPlacementOverlay() {
+        elements.overlay.replaceChildren();
+        if (!state.doc || !state.pageSize) return;
+        const value = placement();
+        if (!(value.width > 0 && value.height > 0)) return;
+        const rect = pdfRectToCanvasRect({
+          left: value.x,
+          bottom: value.y,
+          right: value.x + value.width,
+          top: value.y + value.height,
+        });
+        const node = document.createElement("div");
+        node.className = "placement-rect";
+        node.style.left = `${rect.left}px`;
+        node.style.top = `${rect.top}px`;
+        node.style.width = `${Math.max(1, rect.width)}px`;
+        node.style.height = `${Math.max(1, rect.height)}px`;
+        elements.overlay.append(node);
+      }
+
+      async function renderCurrentPage() {
+        if (!state.doc || state.rendering) return;
+        state.rendering = true;
+        updateControls();
+        try {
+          state.pageSize = state.doc.pageSize(state.pageIndex);
+          const width = Math.max(1, Math.round(state.pageSize.width * state.zoom));
+          const height = Math.max(1, Math.round(state.pageSize.height * state.zoom));
+          state.renderSize = { width, height };
+          const rendered = state.doc.renderPage({ pageIndex: state.pageIndex, width, height, flags: RENDER_ANNOTATIONS });
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.pageStack.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          renderPlacementOverlay();
+          setStatus("Rendered page.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadPdf(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.zoom = 1;
+        state.dirty = false;
+        elements.pageStack.hidden = true;
+        elements.emptyState.hidden = false;
+        updateControls();
+        setStatus("Opening PDF...");
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.doc = api.openDocument(bytes);
+          state.pageCount = state.doc.pageCount();
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      async function loadImage(file) {
+        setStatus("Decoding image...");
+        try {
+          state.decodedImage = await createDecodedImagePayload(file, { mimeType: file.type });
+          elements.imageSize.textContent = `${state.decodedImage.imageWidth} x ${state.decodedImage.imageHeight} px`;
+          elements.imagePreview.src = URL.createObjectURL(file);
+          elements.imagePreview.hidden = false;
+          elements.imageEmpty.hidden = true;
+          if (state.pageSize) fitImageToHalfPage();
+          renderPlacementOverlay();
+          setStatus("Image decoded. Click the page or edit placement values.");
+        } catch (error) {
+          state.decodedImage = null;
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to decode image.", true);
+        } finally {
+          updateControls();
+        }
+      }
+
+      function fitImageToHalfPage() {
+        if (!state.decodedImage || !state.pageSize) return;
+        const targetWidth = state.pageSize.width / 2;
+        const aspect = state.decodedImage.imageHeight / state.decodedImage.imageWidth;
+        elements.widthInput.value = targetWidth.toFixed(1);
+        elements.heightInput.value = (targetWidth * aspect).toFixed(1);
+        renderPlacementOverlay();
+      }
+
+      async function insertImage() {
+        if (!state.doc || !state.decodedImage) return;
+        const value = placement();
+        try {
+          state.doc.addRgbaImage({
+            pageIndex: state.pageIndex,
+            rgbaBytes: state.decodedImage.rgbaBytes,
+            imageWidth: state.decodedImage.imageWidth,
+            imageHeight: state.decodedImage.imageHeight,
+            x: value.x,
+            y: value.y,
+            displayWidth: value.width,
+            displayHeight: value.height,
+          });
+          state.dirty = true;
+          await renderCurrentPage();
+          setStatus("Image inserted. Save the PDF to download changes.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to insert image.", true);
+        }
+      }
+
+      function savePdf() {
+        try {
+          const output = state.doc.save();
+          const base = state.fileName.replace(/\.pdf$/i, "") || "image-inserted";
+          const blob = new Blob([output], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `${base}-image.pdf`;
+          link.click();
+          URL.revokeObjectURL(url);
+          state.dirty = false;
+          updateControls();
+          setStatus("Saved modified PDF.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to save PDF.", true);
+        }
+      }
+
+      function canvasClickToPdfPosition(event) {
+        if (!state.pageSize || !state.renderSize) return;
+        const bounds = elements.canvas.getBoundingClientRect();
+        const canvasX = event.clientX - bounds.left;
+        const canvasY = event.clientY - bounds.top;
+        const scaleX = state.pageSize.width / bounds.width;
+        const scaleY = state.pageSize.height / bounds.height;
+        const value = placement();
+        elements.xInput.value = (canvasX * scaleX).toFixed(1);
+        elements.yInput.value = (state.pageSize.height - canvasY * scaleY - value.height).toFixed(1);
+        renderPlacementOverlay();
+      }
+
+      elements.pdfInput.addEventListener("change", async () => { const [file] = elements.pdfInput.files; if (file) await loadPdf(file); });
+      elements.imageInput.addEventListener("change", async () => { const [file] = elements.imageInput.files; if (file) await loadImage(file); });
+      elements.prevButton.addEventListener("click", async () => { if (state.pageIndex > 0) { state.pageIndex -= 1; await renderCurrentPage(); } });
+      elements.nextButton.addEventListener("click", async () => { if (state.pageIndex < state.pageCount - 1) { state.pageIndex += 1; await renderCurrentPage(); } });
+      elements.zoomOutButton.addEventListener("click", async () => { state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2))); await renderCurrentPage(); });
+      elements.zoomResetButton.addEventListener("click", async () => { state.zoom = 1; await renderCurrentPage(); });
+      elements.zoomInButton.addEventListener("click", async () => { state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2))); await renderCurrentPage(); });
+      elements.fitWidthButton.addEventListener("click", fitImageToHalfPage);
+      elements.insertButton.addEventListener("click", insertImage);
+      elements.saveButton.addEventListener("click", savePdf);
+      elements.canvas.addEventListener("click", canvasClickToPdfPosition);
+      for (const input of [elements.xInput, elements.yInput, elements.widthInput, elements.heightInput]) {
+        input.addEventListener("input", renderPlacementOverlay);
+      }
+      window.addEventListener("beforeunload", () => { closeCurrentDocument(); if (state.api) state.api.destroy(); });
+
+      updateControls();
+    </script>
+  </body>
+</html>

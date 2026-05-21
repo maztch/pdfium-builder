@@ -63,7 +63,7 @@ Status legend:
 
 | Feature | Native API | Worker support | Smoke tested | Docs | Status | Notes |
 |---|---|---:|---:|---|---|---|
-| Add text page object | `wasm_pdf_add_text_page` | `addText` | Yes | [API](API.md#content-insertion), [Usage](USAGE.md#minimal-direct-example), [Worker](WORKER.md#message-protocol) | Stable | UTF-8 input is strictly decoded. |
+| Add text page object | `wasm_pdf_add_text_page`, `wasm_pdf_add_text_box_page` | `addText` | Yes | [API](API.md#content-insertion), [Usage](USAGE.md#wrapped-text-insertion), [Worker](WORKER.md#message-protocol) | Stable | Supports UTF-8, font selection, hard line breaks, word wrapping, alignment, and multiline layout. |
 | Add RGBA image | `wasm_pdf_add_rgba_image_page` | `addImage` with `imageFormat: "rgba"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Expects row-major RGBA bytes. |
 | Add JPEG image | `wasm_pdf_add_jpeg_image_page` | `addImage` with `imageFormat: "jpeg"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Uses PDFium's encoded JPEG image path. |
 | Add PNG image | `wasm_pdf_add_png_image_page` | `addImage` with `imageFormat: "png"` | Yes | [API](API.md#content-insertion), [Worker](WORKER.md#message-protocol) | Stable | Supports common non-interlaced 8-bit PNGs. |
@@ -115,7 +115,7 @@ Status legend:
 
 | Message type | Covered operations | Returns | Status | Notes |
 |---|---|---|---|---|
-| `addText` | Add text page object | Saved PDF bytes | Stable | Simple text insertion convenience path. |
+| `addText` | Add simple or wrapped text page objects | Saved PDF bytes and line count | Stable | Optional `width`, `height`, `fontName`, `align`, and `lineHeight` enable multiline layout. |
 | `addImage` | Add RGBA, JPEG, or PNG image page object | Saved PDF bytes | Stable | Use `rgbaBytes` for RGBA or `imageFormat` plus `imageBytes` for JPEG/PNG. |
 | `addAnnotation` | Highlight, link, text note, rectangle, FreeText | Saved PDF bytes | Stable | Uses `annotationType`. |
 | `updateAnnotation` | Rect, color, text, URI | Saved PDF bytes | Stable | Uses `updateType`. |

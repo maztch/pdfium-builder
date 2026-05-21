@@ -52,7 +52,29 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, AcroForm field read/write, page text extraction, text search/redaction, text insertion, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+
+Wrapped text insertion:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const lineCount = doc.addTextBox({
+    pageIndex: 0,
+    text: "A longer note that should wrap inside the box.",
+    x: 72,
+    y: 700,
+    width: 240,
+    height: 96,
+    fontSize: 12,
+    fontName: "Helvetica-Bold",
+    align: "center",
+    lineHeight: 15,
+    rgba: 0xff003366,
+  });
+  console.log(lineCount);
+  return doc.save();
+});
+```
 
 Basic text redaction:
 
@@ -226,7 +248,7 @@ try {
 6. Save with `wasm_pdf_save_copy`.
 7. Create a `Blob` and download or upload it.
 
-See `examples/browser_add_text_example.js` for a runnable browser-oriented example.
+See `examples/browser-add-text/index.js` for a runnable browser-oriented example.
 
 ## Prefer the worker for UI apps
 

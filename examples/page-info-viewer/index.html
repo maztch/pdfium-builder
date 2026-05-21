@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Page Info Viewer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #18212f;
+        --muted: #647084;
+        --line: #d7dee9;
+        --panel: rgba(255, 255, 255, 0.82);
+        --paper: #fffaf0;
+        --accent: #9a3412;
+        --accent-dark: #7c2d12;
+        --danger: #b42318;
+        --code: #f3f0e8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(154, 52, 18, 0.18), transparent 30rem),
+          radial-gradient(circle at 85% 20%, rgba(20, 83, 45, 0.12), transparent 28rem),
+          linear-gradient(135deg, #fff7ed 0%, #eef2f7 100%);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 100vh;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.76);
+        backdrop-filter: blur(12px);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        letter-spacing: -0.03em;
+      }
+
+      h1 {
+        font-size: clamp(1.25rem, 2vw, 1.9rem);
+      }
+
+      h2 {
+        margin-bottom: 0.75rem;
+        font-size: 1rem;
+      }
+
+      h3 {
+        margin: 1rem 0 0.5rem;
+        font: 700 0.84rem ui-sans-serif, system-ui, sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .status {
+        min-height: 1.5rem;
+        margin-top: 0.35rem;
+        color: var(--muted);
+        font: 0.9rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+
+      input[type="file"] {
+        max-width: 16rem;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.55rem 0.8rem;
+        color: var(--ink);
+        background: white;
+        font: 700 0.88rem ui-sans-serif, system-ui, sans-serif;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent-dark);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(20rem, 28rem) minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      aside {
+        min-height: 0;
+        overflow: auto;
+        padding: 1rem;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .panel {
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 1rem;
+        background: rgba(255, 255, 255, 0.76);
+        box-shadow: 0 18px 50px rgba(24, 33, 47, 0.08);
+      }
+
+      .metric,
+      .box-row,
+      .metadata-row,
+      .permission-row {
+        display: grid;
+        grid-template-columns: minmax(7rem, 1fr) minmax(0, 1.5fr);
+        gap: 0.75rem;
+        padding: 0.48rem 0;
+        border-bottom: 1px solid var(--line);
+        font: 0.9rem ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .metric:last-child,
+      .box-row:last-child,
+      .metadata-row:last-child,
+      .permission-row:last-child {
+        border-bottom: 0;
+      }
+
+      .label {
+        color: var(--muted);
+      }
+
+      code {
+        display: inline-block;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        padding: 0.1rem 0.28rem;
+        border-radius: 0.35rem;
+        background: var(--code);
+        font: 0.82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .viewer {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 2rem;
+      }
+
+      .canvas-frame {
+        display: grid;
+        place-items: start center;
+        min-height: 100%;
+      }
+
+      canvas {
+        display: block;
+        max-width: none;
+        border: 1px solid #ccd4e2;
+        border-radius: 0.4rem;
+        background: white;
+        box-shadow: 0 24px 70px rgba(24, 33, 47, 0.2);
+      }
+
+      .empty {
+        max-width: 38rem;
+        margin: 8vh auto;
+        padding: 2rem;
+        border: 1px dashed var(--line);
+        border-radius: 1rem;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      @media (max-width: 960px) {
+        header {
+          flex-direction: column;
+        }
+
+        .controls {
+          justify-content: flex-start;
+        }
+
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Page Info Viewer</h1>
+          <div class="status" id="status">Load a PDF to inspect page geometry, permissions, and metadata.</div>
+        </div>
+        <div class="controls">
+          <input id="fileInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span class="label">File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span class="label">Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span class="label">Zoom</span><strong id="zoomInfo">100%</strong></div>
+            <div class="metric"><span class="label">Permissions</span><code id="permissionsValue">-</code></div>
+          </section>
+
+          <section class="panel">
+            <h2>Current Page</h2>
+            <div class="metric"><span class="label">Size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span class="label">Rotation</span><strong id="pageRotation">-</strong></div>
+            <div class="metric"><span class="label">Render size</span><strong id="renderSize">-</strong></div>
+            <h3>Page Boxes</h3>
+            <div id="pageBoxes"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Permission Flags</h2>
+            <div id="permissionFlags"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Metadata</h2>
+            <div id="metadataRows"></div>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>Select a PDF file from your machine to inspect its document and page properties.</p>
+            </div>
+            <canvas id="pageCanvas" hidden></canvas>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const PAGE_BOXES = [
+        [0, "Media"],
+        [1, "Crop"],
+        [2, "Bleed"],
+        [3, "Trim"],
+        [4, "Art"],
+      ];
+      const METADATA_KEYS = ["Title", "Author", "Subject", "Keywords", "Creator", "Producer", "CreationDate", "ModDate"];
+      const PERMISSION_FLAGS = [
+        [0x0004, "Print"],
+        [0x0008, "Modify"],
+        [0x0010, "Copy text/images"],
+        [0x0020, "Add/modify annotations"],
+        [0x0100, "Fill forms"],
+        [0x0200, "Extract accessibility content"],
+        [0x0400, "Assemble document"],
+        [0x0800, "High-quality print"],
+      ];
+
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        permissions: 0,
+        metadata: {},
+        zoom: 0.75,
+        rendering: false,
+      };
+
+      const elements = {
+        fileInput: document.getElementById("fileInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        permissionsValue: document.getElementById("permissionsValue"),
+        permissionFlags: document.getElementById("permissionFlags"),
+        pageSize: document.getElementById("pageSize"),
+        pageRotation: document.getElementById("pageRotation"),
+        pageBoxes: document.getElementById("pageBoxes"),
+        metadataRows: document.getElementById("metadataRows"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        renderSize: document.getElementById("renderSize"),
+        emptyState: document.getElementById("emptyState"),
+        canvas: document.getElementById("pageCanvas"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 0.75;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) {
+          state.doc.close();
+          state.doc = null;
+        }
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({
+            locateFile(file) {
+              return new URL(`../../dist/${file}`, import.meta.url).href;
+            },
+          });
+        }
+        return state.api;
+      }
+
+      function formatRect(rect) {
+        return `L ${rect.left.toFixed(1)}, B ${rect.bottom.toFixed(1)}, R ${rect.right.toFixed(1)}, T ${rect.top.toFixed(1)}`;
+      }
+
+      function rotationLabel(rotation) {
+        const degrees = rotation * 90;
+        return `${degrees}deg (${rotation})`;
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        const canvas = elements.canvas;
+        canvas.width = width;
+        canvas.height = height;
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+
+        const ctx = canvas.getContext("2d");
+        const imageData = new ImageData(new Uint8ClampedArray(rgbaBytes), width, height);
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      function setRows(container, rows, className) {
+        container.replaceChildren();
+        for (const [label, value] of rows) {
+          const row = document.createElement("div");
+          row.className = className;
+          const labelEl = document.createElement("span");
+          labelEl.className = "label";
+          labelEl.textContent = label;
+          const valueEl = document.createElement("code");
+          valueEl.textContent = value || "-";
+          row.append(labelEl, valueEl);
+          container.append(row);
+        }
+      }
+
+      function refreshDocumentInfo() {
+        elements.fileName.textContent = state.fileName || "Loaded PDF";
+        elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+        elements.permissionsValue.textContent = `0x${state.permissions.toString(16).padStart(8, "0")}`;
+
+        setRows(
+          elements.permissionFlags,
+          PERMISSION_FLAGS.map(([bit, label]) => [label, (state.permissions & bit) ? "Allowed" : "Not allowed"]),
+          "permission-row"
+        );
+
+        setRows(
+          elements.metadataRows,
+          METADATA_KEYS.map((key) => [key, state.metadata[key] || ""]),
+          "metadata-row"
+        );
+      }
+
+      function refreshPageInfo(size, rotation) {
+        elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+        elements.pageSize.textContent = `${size.width.toFixed(1)} x ${size.height.toFixed(1)} pt`;
+        elements.pageRotation.textContent = rotationLabel(rotation);
+        elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+
+        const boxRows = PAGE_BOXES.map(([boxType, label]) => {
+          try {
+            return [label, formatRect(state.doc.pageBox(state.pageIndex, boxType))];
+          } catch (error) {
+            return [label, error instanceof Error ? error.message : "Unavailable"];
+          }
+        });
+        setRows(elements.pageBoxes, boxRows, "box-row");
+      }
+
+      async function renderCurrentPage() {
+        if (!state.doc || state.rendering) return;
+
+        state.rendering = true;
+        updateControls();
+        try {
+          const size = state.doc.pageSize(state.pageIndex);
+          const rotation = state.doc.pageRotation(state.pageIndex);
+          const width = Math.max(1, Math.round(size.width * state.zoom));
+          const height = Math.max(1, Math.round(size.height * state.zoom));
+          const rendered = state.doc.renderPage({
+            pageIndex: state.pageIndex,
+            width,
+            height,
+            flags: RENDER_ANNOTATIONS,
+          });
+
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.canvas.hidden = false;
+          elements.renderSize.textContent = `${width} x ${height} px`;
+          refreshDocumentInfo();
+          refreshPageInfo(size, rotation);
+          setStatus("Rendered page info.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function loadFile(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.permissions = 0;
+        state.metadata = {};
+        state.zoom = 0.75;
+        elements.canvas.hidden = true;
+        elements.emptyState.hidden = false;
+        updateControls();
+        setStatus("Opening PDF...");
+
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const api = await getApi();
+          state.doc = api.openDocument(bytes);
+          state.pageCount = state.doc.pageCount();
+          state.permissions = state.doc.permissions();
+          for (const key of METADATA_KEYS) {
+            state.metadata[key] = state.doc.metadata(key);
+          }
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      elements.fileInput.addEventListener("change", async () => {
+        const [file] = elements.fileInput.files;
+        if (file) await loadFile(file);
+      });
+
+      elements.prevButton.addEventListener("click", async () => {
+        if (state.pageIndex > 0) {
+          state.pageIndex -= 1;
+          await renderCurrentPage();
+        }
+      });
+
+      elements.nextButton.addEventListener("click", async () => {
+        if (state.pageIndex < state.pageCount - 1) {
+          state.pageIndex += 1;
+          await renderCurrentPage();
+        }
+      });
+
+      elements.zoomOutButton.addEventListener("click", async () => {
+        state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+
+      elements.zoomResetButton.addEventListener("click", async () => {
+        state.zoom = 0.75;
+        await renderCurrentPage();
+      });
+
+      elements.zoomInButton.addEventListener("click", async () => {
+        state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+
+      window.addEventListener("beforeunload", () => {
+        closeCurrentDocument();
+        if (state.api) state.api.destroy();
+      });
+
+      updateControls();
+    </script>
+  </body>
+</html>
