@@ -218,6 +218,13 @@ Every pointer event should convert:
 - canvas pixel coordinates
 - PDF user-space coordinates
 
+Implementation status:
+
+- Added `examples/shared/pointer-interactions.js` for mode-aware item filtering, coordinate conversion, point hit testing, and area hit testing.
+- Replaced the full workbench text-only pointer flow with generic pointer handling for Text, Object/Image, Annotation, Form widget, and Area modes.
+- Added hover state updates, click selection, `Shift` multi-select, rubber-band area selection, and double-click selection status.
+- Added keyboard handling for `Escape`, `Cmd/Ctrl+S`, and `Delete`/`Backspace` for deletable annotation/page-object/image selections.
+
 ### 8) Add Selection Overlay UI
 
 Overlays should update independently from PDF rendering.

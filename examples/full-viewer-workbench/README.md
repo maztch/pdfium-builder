@@ -13,8 +13,9 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Renders the current page with navigation and zoom.
 - Tracks editor selection mode with a shared selection state model.
 - Refreshes normalized current-page selectable items with `getSelectableItems()`.
-- Click-selects visible text runs in Text selection mode.
-- Drag-selects multiple visible text runs with a rubber-band rectangle; hold `Shift` to add to the existing selection.
+- Click-selects selectable text, page objects/images, annotations, and form widgets by active editor mode.
+- Drag-selects selectable items with a rubber-band rectangle; hold `Shift` to add to the existing selection.
+- Uses hover highlighting, double-click selection status, `Escape` to clear selection, `Cmd/Ctrl+S` to save, and `Delete`/`Backspace` to delete selected annotations/page objects/images.
 - Reads permissions, metadata, attachment count, and form field count.
 - Edits common metadata fields with `setMetadata(key, value)`.
 - Extracts current page text with `pageText(pageIndex)`.
