@@ -141,6 +141,24 @@ await pdfium.withDocument(inputBytes, (doc) => {
 
 `annotations()` returns selection-friendly records with `kind`, `key`, `label`, `pageIndex`, `subtypeName`, `rect`, `contents`, `uri`, `colorRgba`, `borderWidth`, and `quadPoints`. Use `annotationInfo(pageIndex, annotationIndex)` for one annotation, `annotationCount(pageIndex)` for counts, `deleteAnnotation(pageIndex, annotationIndex)` to remove one annotation, or the individual `setAnnotation*` helpers for targeted updates.
 
+Normalized selectable items:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const items = doc.getSelectableItems(0);
+  const editableRects = items.map((item) => ({
+    key: item.key,
+    kind: item.kind,
+    label: item.label,
+    rect: item.rect,
+  }));
+
+  console.log(editableRects);
+});
+```
+
+`getSelectableItems()` combines text runs, page objects, image page objects, annotations, and form widgets into `{ kind, pageIndex, index, rect, label, key, data }` records. Image page objects use `kind: "image"` in the combined result. Pass `{ text: false }`, `{ pageObjects: false }`, `{ annotations: false }`, or `{ formWidgets: false }` to exclude expensive or irrelevant sources.
+
 Basic AcroForm usage:
 
 ```js

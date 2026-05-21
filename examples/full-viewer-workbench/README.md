@@ -12,6 +12,7 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Loads a replacement PDF from a local file input.
 - Renders the current page with navigation and zoom.
 - Tracks editor selection mode with a shared selection state model.
+- Refreshes normalized current-page selectable items with `getSelectableItems()`.
 - Click-selects visible text runs in Text selection mode.
 - Drag-selects multiple visible text runs with a rubber-band rectangle; hold `Shift` to add to the existing selection.
 - Reads permissions, metadata, attachment count, and form field count.

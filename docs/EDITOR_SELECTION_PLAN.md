@@ -186,6 +186,13 @@ This should combine:
 - annotations
 - form widgets
 
+Implementation status:
+
+- Added `SELECTABLE_ITEM_KINDS` and `doc.getSelectableItems(pageIndex, options)` to the direct API.
+- Normalized direct text runs, page objects, image page objects, annotations, and form widgets to `{ kind, pageIndex, index, rect, label, key, data }`.
+- Added smoke coverage for mixed selectable item queries and form widget selectable records.
+- Updated the full workbench to refresh current-page selectable items from `doc.getSelectableItems(pageIndex)` and derive text selection runs from that normalized list.
+
 ### 7) Implement Pointer Interaction Layer
 
 Add canvas/page-stack event handling:

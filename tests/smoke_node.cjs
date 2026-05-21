@@ -494,6 +494,8 @@ async function main() {
         { left: 80, bottom: 170, right: 104, top: 194 },
         'direct API transformPageObject should update object bounds'
       );
+      const imageSelectableItems = doc.getSelectableItems(0, { text: false, annotations: false, formWidgets: false });
+      assert.ok(imageSelectableItems.some((item) => item.kind === 'image' && item.data.pageObjectKind === 'pageObject'), 'direct API getSelectableItems should classify image page objects');
       const objectCountBeforeDelete = doc.pageObjectCount(0);
       doc.deletePageObject(0, imageObject.index);
       assert.equal(doc.pageObjectCount(0), objectCountBeforeDelete - 1, 'direct API deletePageObject should remove one object');
@@ -530,6 +532,11 @@ async function main() {
       doc.setAnnotationUri(0, 1, 'https://example.org/direct-updated');
       assert.equal(doc.annotationInfo(0, 1).uri, 'https://example.org/direct-updated', 'direct API setAnnotationUri should update link URI');
       assert.equal(doc.annotations(0).length, 2, 'direct API annotations should enumerate annotation details');
+      const selectableItems = doc.getSelectableItems(0, { formWidgets: false });
+      assert.ok(selectableItems.some((item) => item.kind === 'text' && item.pageIndex === 0 && item.rect && item.data), 'direct API getSelectableItems should include text runs');
+      assert.ok(selectableItems.some((item) => item.kind === 'pageObject' && item.pageIndex === 0 && item.rect && item.data.typeName), 'direct API getSelectableItems should include page objects');
+      assert.ok(selectableItems.some((item) => item.kind === 'annotation' && item.pageIndex === 0 && item.rect && item.data.subtypeName), 'direct API getSelectableItems should include annotations');
+      assert.ok(selectableItems.every((item) => item.key && item.label && item.rect && item.data), 'direct API selectable items should use the common item contract');
       assert.throws(
         () => doc.annotationInfo(0, 99),
         (error) => error instanceof PdfiumApiError && error.code === 2,
@@ -582,6 +589,9 @@ async function main() {
       assert.equal(textField.value, 'Initial Value', 'direct API form value should be readable');
       assert.equal(textField.defaultValue, 'Default Value', 'direct API form default value should be readable');
       assert.deepEqual(textField.widgets[0].rect, { left: 72, bottom: 700, right: 280, top: 730 }, 'direct API form widget rect should be readable');
+      const formSelectableItems = doc.getSelectableItems(0, { text: false, pageObjects: false, annotations: false });
+      assert.equal(formSelectableItems.length, 6, 'direct API getSelectableItems should include form widgets');
+      assert.ok(formSelectableItems.every((item) => item.kind === 'formWidget' && item.key && item.label && item.rect && item.data.fieldName), 'direct API form widget selectable items should use the common item contract');
       assert.equal(textField.widgets[0].pageIndex, 0, 'direct API form widget page index should be readable');
       assert.equal(textField.widgets[0].hasAppearance, false, 'direct API text field should start without appearance');
       assert.equal(checkbox.type, 2, 'direct API checkbox type should be readable');

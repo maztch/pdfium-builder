@@ -40,6 +40,7 @@ Status legend:
 | Text redaction | `wasm_pdf_redact_page_text` | `redactPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker Protocol](WORKER_PROTOCOL.md#redactpagetext) | Partial | Removes intersecting text objects and paints cover rectangles; object-level limitation is documented. |
 | Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Direct API exposes `annotationCount`, `annotationInfo`, and `annotations` for annotation selection UIs. |
 | Page object count/info | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `pageObjectCount`, `pageObjectInfo`, and `pageObjects` for object selection UIs. |
+| Normalized selectable items | Combined direct API query | No | Yes | [Usage](USAGE.md#preferred-direct-api), [API](API.md#annotations) | Stable | `getSelectableItems()` returns text, page object, image, annotation, and form widget records with one common shape. |
 
 ## Page Mutations
 

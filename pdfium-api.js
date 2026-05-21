@@ -103,6 +103,14 @@ export const ANNOTATION_SUBTYPE_NAMES = Object.freeze({
   27: "xfaWidget",
 });
 
+export const SELECTABLE_ITEM_KINDS = Object.freeze({
+  TEXT: "text",
+  PAGE_OBJECT: "pageObject",
+  ANNOTATION: "annotation",
+  FORM_WIDGET: "formWidget",
+  IMAGE: "image",
+});
+
 export class PdfiumApiError extends Error {
   constructor(message, code = 0) {
     super(message);
@@ -298,8 +306,13 @@ function parseTextRuns(bytes) {
       charCount,
       text,
       rect,
-      kind: "text",
+      kind: SELECTABLE_ITEM_KINDS.TEXT,
       label: text || `Text ${index}`,
+      data: {
+        text,
+        startIndex,
+        charCount,
+      },
     });
   }
 
@@ -314,6 +327,11 @@ function pageObjectLabel(type, index) {
 function annotationLabel(subtype, index) {
   const name = ANNOTATION_SUBTYPE_NAMES[subtype] || "annotation";
   return `${name[0].toUpperCase()}${name.slice(1)} annotation ${index}`;
+}
+
+function formWidgetLabel(field, widget) {
+  const fieldName = field.name || "Unnamed field";
+  return `${fieldName} widget ${widget.index}`;
 }
 
 function normalizeMatrix(matrix = {}) {
@@ -394,8 +412,18 @@ function parseAnnotationInfo(bytes, index) {
     contents: contents || null,
     uri: uri || null,
     quadPoints,
-    kind: "annotation",
+    kind: SELECTABLE_ITEM_KINDS.ANNOTATION,
     label: annotationLabel(subtype, index),
+    data: {
+      subtype,
+      subtypeName: ANNOTATION_SUBTYPE_NAMES[subtype] || "unknown",
+      flags,
+      colorRgba: hasColor ? colorRgba >>> 0 : null,
+      borderWidth: borderWidth >= 0 ? borderWidth : null,
+      contents: contents || null,
+      uri: uri || null,
+      quadPoints,
+    },
   };
 }
 
@@ -806,9 +834,13 @@ export class PdfDocument {
           bottom: rect.bottom,
           right: rect.right,
           top: rect.top,
-          kind: "pageObject",
+          kind: SELECTABLE_ITEM_KINDS.PAGE_OBJECT,
           label: pageObjectLabel(type, objectIndex),
           key: `pageObject:${pageIndex}:${objectIndex}`,
+          data: {
+            type,
+            typeName: PAGE_OBJECT_TYPE_NAMES[type] || PAGE_OBJECT_TYPE_NAMES[0],
+          },
         };
       });
     } finally {
@@ -847,6 +879,9 @@ export class PdfDocument {
       ...annotation,
       pageIndex,
       key: `annotation:${pageIndex}:${annotation.index}`,
+      data: {
+        ...annotation.data,
+      },
     };
   }
 
@@ -857,6 +892,58 @@ export class PdfDocument {
       annotations.push(this.annotationInfo(pageIndex, index));
     }
     return annotations;
+  }
+
+  getSelectableItems(pageIndex = 0, {
+    text = true,
+    pageObjects = true,
+    annotations = true,
+    formWidgets = true,
+  } = {}) {
+    const items = [];
+
+    if (text) items.push(...this.pageTextRuns(pageIndex));
+    if (pageObjects) {
+      items.push(...this.pageObjects(pageIndex).map((item) => {
+        if (item.type !== 3) return item;
+        return {
+          ...item,
+          kind: SELECTABLE_ITEM_KINDS.IMAGE,
+          key: `image:${pageIndex}:${item.index}`,
+          data: {
+            ...item.data,
+            pageObjectKind: item.kind,
+            pageObjectKey: item.key,
+          },
+        };
+      }));
+    }
+    if (annotations) items.push(...this.annotations(pageIndex));
+
+    if (formWidgets) {
+      for (const field of this.formFields()) {
+        for (const widget of field.widgets) {
+          if (widget.pageIndex !== pageIndex) continue;
+          items.push({
+            kind: SELECTABLE_ITEM_KINDS.FORM_WIDGET,
+            pageIndex,
+            index: widget.index,
+            rect: widget.rect,
+            label: formWidgetLabel(field, widget),
+            key: `formWidget:${pageIndex}:${field.index}:${widget.index}`,
+            data: {
+              field,
+              widget,
+              fieldIndex: field.index,
+              fieldName: field.name,
+              fieldType: field.type,
+            },
+          });
+        }
+      }
+    }
+
+    return items;
   }
 
   deletePageObject(pageIndex, objectIndex) {

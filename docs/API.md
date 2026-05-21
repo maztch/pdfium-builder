@@ -256,6 +256,8 @@ PNG support is intentionally small: non-interlaced, 8-bit grayscale, RGB, graysc
 
 The direct ES module wraps annotation read/mutation as `doc.annotationCount(pageIndex)`, `doc.annotationInfo(pageIndex, annotationIndex)`, `doc.annotations(pageIndex)`, `doc.deleteAnnotation(pageIndex, annotationIndex)`, `doc.setAnnotationRect(pageIndex, annotationIndex, rect)`, `doc.setAnnotationColor(pageIndex, annotationIndex, rgba)`, `doc.setAnnotationText(pageIndex, annotationIndex, contents)`, `doc.setAnnotationUri(pageIndex, annotationIndex, uri)`, and `doc.updateAnnotation(pageIndex, annotationIndex, updates)`. Direct annotation records include `kind: "annotation"`, `pageIndex`, `key`, `label`, `subtypeName`, a PDF user-space `rect`, optional `colorRgba`, optional `borderWidth`, optional `contents`, optional `uri`, and `quadPoints`.
 
+The direct ES module also exposes `doc.getSelectableItems(pageIndex, options)`, which combines text runs, page objects, annotations, and form widgets into one common selectable item shape: `{ kind, pageIndex, index, rect, label, key, data }`. Image page objects are classified as `kind: "image"` in this combined query while retaining their page-object metadata in `data`. Use boolean options `text`, `pageObjects`, `annotations`, and `formWidgets` to include or exclude sources.
+
 Known helper subtypes:
 
 - `1`: text note
