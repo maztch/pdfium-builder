@@ -497,6 +497,47 @@ async function main() {
       const objectCountBeforeDelete = doc.pageObjectCount(0);
       doc.deletePageObject(0, imageObject.index);
       assert.equal(doc.pageObjectCount(0), objectCountBeforeDelete - 1, 'direct API deletePageObject should remove one object');
+      assert.equal(doc.annotationCount(0), 0, 'direct API annotationCount should start empty');
+      const addedDirectAnnotation = doc.mod.ccall(
+        'wasm_pdf_add_rectangle_annotation',
+        'number',
+        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
+        [doc.handle, 0, 44, 250, 150, 310, 0xff336699, 1.5]
+      );
+      assert.equal(addedDirectAnnotation, 1, 'native rectangle annotation setup should succeed for direct API annotation tests');
+      const addedDirectLink = doc.mod.ccall(
+        'wasm_pdf_add_link_annotation',
+        'number',
+        ['number', 'number', 'number', 'number', 'number', 'number', 'string'],
+        [doc.handle, 0, 160, 250, 230, 310, 'https://example.com/direct']
+      );
+      assert.equal(addedDirectLink, 1, 'native link annotation setup should succeed for direct API annotation tests');
+      assert.equal(doc.annotationCount(0), 2, 'direct API annotationCount should count annotations');
+      doc.updateAnnotation(0, 0, {
+        rect: { left: 48, bottom: 252, right: 152, top: 312 },
+        color: 0xff669933,
+        contents: 'Direct rectangle note',
+      });
+      const annotation = doc.annotationInfo(0, 0);
+      assert.equal(annotation.kind, 'annotation', 'direct API annotation info should be selection-friendly');
+      assert.equal(annotation.subtype, 5, 'direct API annotation subtype should be readable');
+      assert.equal(annotation.subtypeName, 'square', 'direct API annotation subtype name should be readable');
+      assert.deepEqual(annotation.rect, { left: 48, bottom: 252, right: 152, top: 312 }, 'direct API annotation rect should be readable');
+      assert.equal(annotation.colorRgba, 0xff669933, 'direct API annotation color should be readable');
+      assert.equal(annotation.borderWidth, 1.5, 'direct API annotation border width should be readable');
+      assert.equal(annotation.contents, 'Direct rectangle note', 'direct API annotation contents should update');
+      assert.equal(annotation.key, 'annotation:0:0', 'direct API annotation key should be stable');
+      doc.setAnnotationUri(0, 1, 'https://example.org/direct-updated');
+      assert.equal(doc.annotationInfo(0, 1).uri, 'https://example.org/direct-updated', 'direct API setAnnotationUri should update link URI');
+      assert.equal(doc.annotations(0).length, 2, 'direct API annotations should enumerate annotation details');
+      assert.throws(
+        () => doc.annotationInfo(0, 99),
+        (error) => error instanceof PdfiumApiError && error.code === 2,
+        'direct API annotationInfo should report invalid index errors'
+      );
+      doc.deleteAnnotation(0, 1);
+      doc.deleteAnnotation(0, 0);
+      assert.equal(doc.annotationCount(0), 0, 'direct API deleteAnnotation should remove annotations');
       assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
       assert.match(doc.pageText(0), /Direct[\r\n]+wrapped/, 'direct API pageText should read wrapped inserted text');
       if (typeof directApi.mod._wasm_pdf_get_page_text_runs === 'function') {

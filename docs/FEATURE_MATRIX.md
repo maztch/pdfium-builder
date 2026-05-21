@@ -38,7 +38,7 @@ Status legend:
 | Text hit-test runs | `wasm_pdf_get_page_text_runs` | `queryPageTextRuns` | Yes | [API](API.md#text-extraction-and-search), [Worker Protocol](WORKER_PROTOCOL.md#querypagetextruns) | Initial | Emits visible character-level runs with PDF-space rectangles for selection hit testing. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Text redaction | `wasm_pdf_redact_page_text` | `redactPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker Protocol](WORKER_PROTOCOL.md#redactpagetext) | Partial | Removes intersecting text objects and paints cover rectangles; object-level limitation is documented. |
-| Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Worker returns subtype, flags, rect, color, border, contents, URI, and quadpoints. |
+| Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Direct API exposes `annotationCount`, `annotationInfo`, and `annotations` for annotation selection UIs. |
 | Page object count/info | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `pageObjectCount`, `pageObjectInfo`, and `pageObjects` for object selection UIs. |
 
 ## Page Mutations
@@ -82,12 +82,12 @@ Status legend:
 | Add text note | `wasm_pdf_add_text_note_annotation` | `addAnnotation` with `textNote` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Contents must be valid UTF-8. |
 | Add rectangle | `wasm_pdf_add_rectangle_annotation` | `addAnnotation` with `rectangle` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Supports stroke color and border width. |
 | Add FreeText box | `wasm_pdf_add_freetext_annotation` | `addAnnotation` with `freeText` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Generates an appearance stream so it is visible immediately. |
-| Update annotation rect | `wasm_pdf_set_annotation_rect` | `updateAnnotation` with `rect` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Also updates first quadpoints for markup/link annotations. |
-| Update annotation color | `wasm_pdf_set_annotation_color` | `updateAnnotation` with `color` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Updates stroke/markup color. |
-| Update annotation text | `wasm_pdf_set_annotation_text` | `updateAnnotation` with `text` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Contents must be valid UTF-8. |
-| Update link URI | `wasm_pdf_set_annotation_uri` | `updateAnnotation` with `uri` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | URI must be non-empty 7-bit ASCII. |
-| Enumerate annotation details | `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Returns subtype, flags, rectangle, color, border width, contents, URI, and quadpoints. |
-| Delete annotation | `wasm_pdf_delete_annotation` | `deleteAnnotation` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#deleteannotation) | Stable | Annotation indices are separate from page object indices. |
+| Update annotation rect | `wasm_pdf_set_annotation_rect` | `updateAnnotation` with `rect` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `setAnnotationRect` and `updateAnnotation`. |
+| Update annotation color | `wasm_pdf_set_annotation_color` | `updateAnnotation` with `color` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `setAnnotationColor`; updates stroke/markup color. |
+| Update annotation text | `wasm_pdf_set_annotation_text` | `updateAnnotation` with `text` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `setAnnotationText`; contents must be valid UTF-8. |
+| Update link URI | `wasm_pdf_set_annotation_uri` | `updateAnnotation` with `uri` | Yes | [API](API.md#annotations), [Worker](WORKER.md#message-protocol) | Stable | Direct API exposes `setAnnotationUri`; URI must be non-empty 7-bit ASCII. |
+| Enumerate annotation details | `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Direct API returns selection-friendly annotation records with subtype, flags, rectangle, color, border width, contents, URI, and quadpoints. |
+| Delete annotation | `wasm_pdf_delete_annotation` | `deleteAnnotation` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#deleteannotation) | Stable | Direct and worker APIs delete by zero-based annotation index. |
 
 ## Rendering
 

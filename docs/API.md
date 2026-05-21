@@ -254,6 +254,8 @@ PNG support is intentionally small: non-interlaced, 8-bit grayscale, RGB, graysc
 - `wasm_pdf_set_annotation_text(handle, pageIndex, annotationIndex, contents)` updates annotation `Contents`. `contents` must be valid UTF-8.
 - `wasm_pdf_set_annotation_uri(handle, pageIndex, annotationIndex, uri)` updates a link URI. `uri` must be non-empty 7-bit ASCII.
 
+The direct ES module wraps annotation read/mutation as `doc.annotationCount(pageIndex)`, `doc.annotationInfo(pageIndex, annotationIndex)`, `doc.annotations(pageIndex)`, `doc.deleteAnnotation(pageIndex, annotationIndex)`, `doc.setAnnotationRect(pageIndex, annotationIndex, rect)`, `doc.setAnnotationColor(pageIndex, annotationIndex, rgba)`, `doc.setAnnotationText(pageIndex, annotationIndex, contents)`, `doc.setAnnotationUri(pageIndex, annotationIndex, uri)`, and `doc.updateAnnotation(pageIndex, annotationIndex, updates)`. Direct annotation records include `kind: "annotation"`, `pageIndex`, `key`, `label`, `subtypeName`, a PDF user-space `rect`, optional `colorRgba`, optional `borderWidth`, optional `contents`, optional `uri`, and `quadPoints`.
+
 Known helper subtypes:
 
 - `1`: text note

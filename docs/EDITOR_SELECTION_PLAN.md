@@ -151,6 +151,13 @@ Initial update methods should wrap existing setters:
 - text/contents
 - URI
 
+Implementation status:
+
+- Added direct `annotationCount`, `annotationInfo`, `annotations`, and `deleteAnnotation`.
+- Added direct `setAnnotationRect`, `setAnnotationColor`, `setAnnotationText`, `setAnnotationUri`, and `updateAnnotation`.
+- `annotations()` returns selection-friendly records with `kind`, `key`, `label`, `pageIndex`, `subtypeName`, `rect`, `contents`, `uri`, `colorRgba`, `borderWidth`, and `quadPoints`.
+- Added smoke coverage for direct annotation enumeration, updates, invalid info errors, and deletion.
+
 ### 6) Normalize Selectable Items
 
 Create one common item shape for hit testing and inspector rendering:

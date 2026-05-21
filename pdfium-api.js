@@ -73,6 +73,36 @@ export const PAGE_OBJECT_TYPE_NAMES = Object.freeze({
   3: "image",
 });
 
+export const ANNOTATION_SUBTYPE_NAMES = Object.freeze({
+  1: "text",
+  2: "link",
+  3: "freeText",
+  4: "line",
+  5: "square",
+  6: "circle",
+  7: "polygon",
+  8: "polyline",
+  9: "highlight",
+  10: "underline",
+  11: "squiggly",
+  12: "strikeout",
+  13: "stamp",
+  14: "caret",
+  15: "ink",
+  16: "popup",
+  17: "fileAttachment",
+  18: "sound",
+  19: "movie",
+  20: "widget",
+  21: "screen",
+  22: "printerMark",
+  23: "trapNet",
+  24: "watermark",
+  25: "threeD",
+  26: "richMedia",
+  27: "xfaWidget",
+});
+
 export class PdfiumApiError extends Error {
   constructor(message, code = 0) {
     super(message);
@@ -281,6 +311,11 @@ function pageObjectLabel(type, index) {
   return `${name[0].toUpperCase()}${name.slice(1)} object ${index}`;
 }
 
+function annotationLabel(subtype, index) {
+  const name = ANNOTATION_SUBTYPE_NAMES[subtype] || "annotation";
+  return `${name[0].toUpperCase()}${name.slice(1)} annotation ${index}`;
+}
+
 function normalizeMatrix(matrix = {}) {
   if (Array.isArray(matrix)) {
     const [a = 1, b = 0, c = 0, d = 1, e = 0, f = 0] = matrix;
@@ -289,6 +324,79 @@ function normalizeMatrix(matrix = {}) {
 
   const { a = 1, b = 0, c = 0, d = 1, e = 0, f = 0 } = matrix;
   return { a, b, c, d, e, f };
+}
+
+function parseAnnotationInfo(bytes, index) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 0;
+
+  function readInt32() {
+    const value = view.getInt32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readUint32() {
+    const value = view.getUint32(offset, true);
+    offset += 4;
+    return value;
+  }
+
+  function readDouble() {
+    const value = view.getFloat64(offset, true);
+    offset += 8;
+    return value;
+  }
+
+  function readString() {
+    const length = readUint32();
+    const value = textDecoder.decode(bytes.subarray(offset, offset + length));
+    offset += length;
+    return value;
+  }
+
+  const subtype = readInt32();
+  const flags = readInt32();
+  const rect = {
+    left: readDouble(),
+    bottom: readDouble(),
+    right: readDouble(),
+    top: readDouble(),
+  };
+  const hasColor = readInt32() !== 0;
+  const colorRgba = readInt32();
+  const borderWidth = readDouble();
+  const contents = readString();
+  const uri = readString();
+  const quadCount = readUint32();
+  const quadPoints = [];
+  for (let quadIndex = 0; quadIndex < quadCount; quadIndex += 1) {
+    quadPoints.push({
+      x1: readDouble(),
+      y1: readDouble(),
+      x2: readDouble(),
+      y2: readDouble(),
+      x3: readDouble(),
+      y3: readDouble(),
+      x4: readDouble(),
+      y4: readDouble(),
+    });
+  }
+
+  return {
+    index,
+    subtype,
+    subtypeName: ANNOTATION_SUBTYPE_NAMES[subtype] || "unknown",
+    flags,
+    rect,
+    colorRgba: hasColor ? colorRgba >>> 0 : null,
+    borderWidth: borderWidth >= 0 ? borderWidth : null,
+    contents: contents || null,
+    uri: uri || null,
+    quadPoints,
+    kind: "annotation",
+    label: annotationLabel(subtype, index),
+  };
 }
 
 function parseAttachmentInfo(bytes, index) {
@@ -717,6 +825,40 @@ export class PdfDocument {
     return objects;
   }
 
+  annotationCount(pageIndex = 0) {
+    this.assertOpen();
+    const count = this.mod.ccall("wasm_pdf_annotation_count", "number", ["number", "number"], [this.handle, pageIndex]);
+    if (count < 0) this.api.throwLastError("Unable to count annotations");
+    return count;
+  }
+
+  annotationInfo(pageIndex = 0, annotationIndex = 0) {
+    const bytes = this.outputBytes(
+      (outPtrPtr, outSizePtr) => this.mod.ccall(
+        "wasm_pdf_get_annotation_info",
+        "number",
+        ["number", "number", "number", "number", "number"],
+        [this.handle, pageIndex, annotationIndex, outPtrPtr, outSizePtr]
+      ),
+      "Unable to query annotation info"
+    );
+    const annotation = parseAnnotationInfo(bytes, annotationIndex);
+    return {
+      ...annotation,
+      pageIndex,
+      key: `annotation:${pageIndex}:${annotation.index}`,
+    };
+  }
+
+  annotations(pageIndex = 0) {
+    const count = this.annotationCount(pageIndex);
+    const annotations = [];
+    for (let index = 0; index < count; index += 1) {
+      annotations.push(this.annotationInfo(pageIndex, index));
+    }
+    return annotations;
+  }
+
   deletePageObject(pageIndex, objectIndex) {
     this.call(
       "wasm_pdf_delete_page_object",
@@ -725,6 +867,71 @@ export class PdfDocument {
       [this.handle, pageIndex, objectIndex],
       "Unable to delete page object"
     );
+    return this;
+  }
+
+  deleteAnnotation(pageIndex, annotationIndex) {
+    this.call(
+      "wasm_pdf_delete_annotation",
+      "number",
+      ["number", "number", "number"],
+      [this.handle, pageIndex, annotationIndex],
+      "Unable to delete annotation"
+    );
+    return this;
+  }
+
+  setAnnotationRect(pageIndex, annotationIndex, { left, bottom, right, top }) {
+    this.call(
+      "wasm_pdf_set_annotation_rect",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number"],
+      [this.handle, pageIndex, annotationIndex, left, bottom, right, top],
+      "Unable to set annotation rectangle"
+    );
+    return this;
+  }
+
+  setAnnotationColor(pageIndex, annotationIndex, rgba) {
+    this.call(
+      "wasm_pdf_set_annotation_color",
+      "number",
+      ["number", "number", "number", "number"],
+      [this.handle, pageIndex, annotationIndex, rgba],
+      "Unable to set annotation color"
+    );
+    return this;
+  }
+
+  setAnnotationText(pageIndex, annotationIndex, contents) {
+    this.call(
+      "wasm_pdf_set_annotation_text",
+      "number",
+      ["number", "number", "number", "string"],
+      [this.handle, pageIndex, annotationIndex, contents],
+      "Unable to set annotation text"
+    );
+    return this;
+  }
+
+  setAnnotationUri(pageIndex, annotationIndex, uri) {
+    this.call(
+      "wasm_pdf_set_annotation_uri",
+      "number",
+      ["number", "number", "number", "string"],
+      [this.handle, pageIndex, annotationIndex, uri],
+      "Unable to set annotation URI"
+    );
+    return this;
+  }
+
+  updateAnnotation(pageIndex, annotationIndex, updates = {}) {
+    if (updates.rect) this.setAnnotationRect(pageIndex, annotationIndex, updates.rect);
+    if (Object.hasOwn(updates, "color")) this.setAnnotationColor(pageIndex, annotationIndex, updates.color);
+    if (Object.hasOwn(updates, "rgba")) this.setAnnotationColor(pageIndex, annotationIndex, updates.rgba);
+    if (Object.hasOwn(updates, "text")) this.setAnnotationText(pageIndex, annotationIndex, updates.text);
+    if (Object.hasOwn(updates, "contents")) this.setAnnotationText(pageIndex, annotationIndex, updates.contents);
+    if (Object.hasOwn(updates, "uri")) this.setAnnotationUri(pageIndex, annotationIndex, updates.uri);
     return this;
   }
 

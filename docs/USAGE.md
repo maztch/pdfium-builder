@@ -52,7 +52,7 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete/copy/import, page rotation/boxes/size, page object enumeration/transforms/deletion, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete/copy/import, page rotation/boxes/size, page object enumeration/transforms/deletion, annotation enumeration/updates/deletion, RGBA image insertion, browser image decoding to RGBA, and page rendering.
 
 Wrapped text insertion:
 
@@ -120,6 +120,26 @@ await pdfium.withDocument(inputBytes, (doc) => {
 ```
 
 `pageObjects()` returns selection-friendly records with `kind`, `key`, `label`, `pageIndex`, `typeName`, and `rect`. Use `pageObjectInfo(pageIndex, objectIndex)` for one object, `pageObjectCount(pageIndex)` for counts, and `deletePageObject(pageIndex, objectIndex)` to remove a content object.
+
+Annotation selection/editing:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const annotations = doc.annotations(0);
+  const link = annotations.find((annotation) => annotation.subtypeName === "link");
+
+  if (link) {
+    doc.updateAnnotation(0, link.index, {
+      rect: { left: 72, bottom: 680, right: 240, top: 710 },
+      uri: "https://example.org/updated",
+    });
+  }
+
+  return doc.save();
+});
+```
+
+`annotations()` returns selection-friendly records with `kind`, `key`, `label`, `pageIndex`, `subtypeName`, `rect`, `contents`, `uri`, `colorRgba`, `borderWidth`, and `quadPoints`. Use `annotationInfo(pageIndex, annotationIndex)` for one annotation, `annotationCount(pageIndex)` for counts, `deleteAnnotation(pageIndex, annotationIndex)` to remove one annotation, or the individual `setAnnotation*` helpers for targeted updates.
 
 Basic AcroForm usage:
 
