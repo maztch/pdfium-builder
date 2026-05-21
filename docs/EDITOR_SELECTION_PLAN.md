@@ -279,6 +279,13 @@ Initial shortcuts:
 - `Cmd/Ctrl + Z`: undo later
 - `Cmd/Ctrl + Shift + Z`: redo later
 
+Implementation status:
+
+- Added `examples/shared/keyboard-shortcuts.js` for shortcut classification and editable-target filtering.
+- Full workbench handles `Escape`, `Delete`/`Backspace`, and `Cmd/Ctrl+S` with active behavior.
+- Full workbench handles arrow-key nudge and `Cmd/Ctrl+Z`/`Cmd/Ctrl+Shift+Z` with explicit planned-feature status messages until transform/history support lands.
+- Added visible shortcut help to the Editor Mode panel.
+
 ### 11) Define Mutation Refresh Rules
 
 After any edit:
