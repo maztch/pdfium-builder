@@ -109,7 +109,8 @@ Initial implementation status:
 - Added worker `queryPageTextRuns`.
 - Added character-level text run parsing in direct and worker APIs.
 - Wired full workbench Text selection mode to click-hit-test current page text runs.
-- Drag text selection is still pending for the pointer interaction step.
+- Added rubber-band drag selection for current-page text runs in the full workbench.
+- `Shift` + drag extends the current text selection.
 
 ### 4) Promote Page Object Helpers To Direct API
 
