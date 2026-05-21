@@ -30,6 +30,7 @@ Standalone browser samples preload [`demo.pdf`](demo.pdf) on startup. Use the PD
 | [`attachments-panel/`](attachments-panel/) | Browser page | Lists, downloads, adds, replaces, deletes, renders, and saves embedded attachments. | `http://localhost:8080/examples/attachments-panel/` |
 | [`redaction-demo/`](redaction-demo/) | Browser page | Searches text, previews redaction bounds, applies object-level redaction, renders, and saves changes. | `http://localhost:8080/examples/redaction-demo/` |
 | [`forms-demo/`](forms-demo/) | Browser page | Lists AcroForm fields/widgets/options, overlays widget bounds, edits supported values, and saves changes. | `http://localhost:8080/examples/forms-demo/` |
+| [`editor-mode/`](editor-mode/) | Browser page | Focused edit-mode surface for selecting items, moving objects/images, adding text, deleting supported objects/annotations/images, undo/redo, and saving. | `http://localhost:8080/examples/editor-mode/` |
 | [`full-viewer-workbench/`](full-viewer-workbench/) | Browser page | Combines rendering, metadata, text/search/redaction, pages, geometry, images, attachments, forms, and save in one tabbed workbench. | `http://localhost:8080/examples/full-viewer-workbench/` |
 | [`browser-add-text/`](browser-add-text/) | Browser module helper | Exports `addTextToPdf(inputBytes, text)` for adding text to page 1 and returning saved PDF bytes. | Import `examples/browser-add-text/index.js` from a browser page or bundler entry. |
 

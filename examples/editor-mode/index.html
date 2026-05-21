@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Editor Mode</title>
+    <style>
+      :root{--ink:#172033;--muted:#64748b;--line:#d8e1ec;--panel:#f6f3eb;--paper:#fffef9;--accent:#b45309;--accent-soft:rgba(180,83,9,.13);--danger:#b91c1c;--danger-soft:#fee2e2;--ok:#166534;--active:#fde68a}
+      *{box-sizing:border-box}body{margin:0;min-height:100vh;color:var(--ink);background:radial-gradient(circle at top left,#fef3c7 0,#faf7ef 32rem,#e7eef8 100%);font-family:Avenir Next,Segoe UI,sans-serif}
+      header{display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--line);background:rgba(255,254,249,.92);backdrop-filter:blur(14px)}h1{margin:0;font-size:1.35rem}h2,h3{margin:.25rem 0 .75rem}.status{color:var(--muted);font-size:.9rem}.status.error{color:var(--danger)}
+      main{display:grid;grid-template-columns:22rem minmax(0,1fr) 21rem;min-height:calc(100vh - 76px)}aside{min-height:0;overflow:auto;padding:1rem;border-right:1px solid var(--line);background:rgba(246,243,235,.85)}aside.right{border-right:0;border-left:1px solid var(--line)}
+      .panel{margin-bottom:1rem;padding:1rem;border:1px solid var(--line);border-radius:1rem;background:rgba(255,254,249,.9);box-shadow:0 18px 45px rgba(44,35,21,.08)}.button-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}.metric{display:flex;justify-content:space-between;gap:.8rem;padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.9rem}.metric:last-child{border-bottom:0}.metric span:first-child{color:var(--muted)}
+      input,textarea,button{font:.9rem Avenir Next,Segoe UI,sans-serif}input[type=file]{max-width:13rem}input[type=number],textarea{width:100%;border:1px solid var(--line);border-radius:.7rem;padding:.55rem .65rem;background:white;color:var(--ink)}textarea{min-height:5rem;resize:vertical}label{display:grid;gap:.25rem;color:var(--muted);font-size:.82rem}button{border:1px solid var(--line);border-radius:999px;padding:.55rem .82rem;color:var(--ink);background:white;font-weight:700;cursor:pointer}button.primary{border-color:var(--accent);color:white;background:var(--accent)}button.danger{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}button.save{border-color:var(--ok);color:white;background:var(--ok)}button.active{border-color:var(--accent);background:var(--accent-soft)}button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.45;cursor:not-allowed}.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:.65rem}
+      .viewer{min-width:0;min-height:0;overflow:auto;padding:2rem}.canvas-frame{display:grid;place-items:start center;min-height:100%}.page-stack{position:relative;display:inline-block;touch-action:none}canvas{display:block;max-width:none;border:1px solid #cbd5e1;border-radius:.5rem;background:white;box-shadow:0 26px 70px rgba(44,35,21,.24)}.overlay{position:absolute;inset:0;pointer-events:none}.selection-box,.selection-marquee{position:absolute;border-radius:.2rem}.selection-box{border:2px solid #b45309;background:rgba(180,83,9,.10)}.selection-box.hover{border-style:dashed;border-color:#2563eb;background:rgba(37,99,235,.10)}.selection-box.selected{box-shadow:0 0 0 2px rgba(255,255,255,.85),0 0 0 4px rgba(180,83,9,.22)}.selection-box.selected.multi{background:rgba(180,83,9,.18)}.selection-box.kind-text{border-color:#ca8a04;background:rgba(250,204,21,.22)}.selection-box.kind-image{border-color:#db2777;background:rgba(219,39,119,.12)}.selection-box.kind-annotation{border-color:#7c3aed;background:rgba(124,58,237,.12)}.selection-box.kind-form-widget{border-color:#2563eb;background:rgba(37,99,235,.12)}.selection-box.drag-ghost{border-style:dotted;border-color:#475569;background:rgba(71,85,105,.08)}.selection-marquee{border:1.5px dashed #b45309;background:rgba(180,83,9,.12)}.selection-handle{position:absolute;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border:1px solid white;border-radius:999px;background:#b45309;box-shadow:0 1px 4px rgba(21,27,45,.3)}.empty{max-width:34rem;margin:8vh auto;padding:2rem;border:1px dashed var(--line);border-radius:1rem;text-align:center;background:rgba(255,254,249,.76)}
+      .inspector-metric strong{max-width:60%;overflow-wrap:anywhere;text-align:right}.inspector-list{display:grid;gap:.35rem}.inspector-row{padding:.45rem .55rem;border:1px solid var(--line);border-radius:.65rem;background:#fff7ed;font-size:.82rem}
+      @media(max-width:980px){main{grid-template-columns:1fr}aside,aside.right{border:0;border-bottom:1px solid var(--line)}.viewer{min-height:60vh;padding:1rem}}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><h1>PDFium WASM Editor Mode</h1><div id="status" class="status">Load a PDF, select editable items, mutate, undo, and save.</div></div>
+      <div class="button-row"><input id="pdfInput" type="file" accept="application/pdf,.pdf"><button id="prevButton" type="button" disabled>Previous</button><button id="nextButton" type="button" disabled>Next</button><button id="saveButton" class="save" type="button" disabled>Save PDF</button></div>
+    </header>
+    <main>
+      <aside>
+        <section class="panel">
+          <h2>Document</h2>
+          <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+          <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+          <div class="metric"><span>Size</span><strong id="pageSize">-</strong></div>
+          <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          <div class="metric"><span>Dirty</span><strong id="dirtyInfo">No</strong></div>
+        </section>
+        <section class="panel">
+          <h2>Edit Mode</h2>
+          <div class="button-row" id="selectionModes">
+            <button class="active" data-selection-mode="pan" type="button">Pan</button>
+            <button data-selection-mode="selectText" type="button">Text</button>
+            <button data-selection-mode="selectObject" type="button">Object</button>
+            <button data-selection-mode="selectAnnotation" type="button">Annotation</button>
+            <button data-selection-mode="selectFormWidget" type="button">Form</button>
+            <button data-selection-mode="areaSelect" type="button">Area</button>
+          </div>
+          <div class="metric" style="margin-top:.75rem"><span>Mode</span><strong id="selectionModeInfo">Pan</strong></div>
+          <div class="metric"><span>Selection</span><strong id="selectionInfo">None</strong></div>
+          <div class="button-row" style="margin-top:.75rem">
+            <button id="clearButton" type="button" disabled>Clear</button>
+            <button id="deleteButton" class="danger" type="button" disabled>Delete selected</button>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>History</h2>
+          <div class="metric"><span>Undo</span><strong id="undoInfo">0</strong></div>
+          <div class="metric"><span>Redo</span><strong id="redoInfo">0</strong></div>
+          <div class="button-row" style="margin-top:.75rem"><button id="undoButton" type="button" disabled>Undo</button><button id="redoButton" type="button" disabled>Redo</button></div>
+        </section>
+      </aside>
+      <section class="viewer">
+        <div class="canvas-frame">
+          <div id="emptyState" class="empty"><h2>Editor-only sample</h2><p class="status">The sample preloads <code>../demo.pdf</code>. Use the left toolbar to switch selection modes, drag an area, delete supported selected items, add text, undo, redo, and save.</p></div>
+          <div id="pageStack" class="page-stack" hidden><canvas id="pageCanvas"></canvas><div id="overlay" class="overlay"></div></div>
+        </div>
+      </section>
+      <aside class="right">
+        <section class="panel">
+          <h2>Selected Item</h2>
+          <div id="selectionInspector"></div>
+        </section>
+        <section class="panel">
+          <h2>Move Objects</h2>
+          <p class="status">Moves selected page objects and images. Text runs, annotations, and form widgets are inspected only in this sample.</p>
+          <div class="grid-2">
+            <label>Delta X<input id="moveXInput" type="number" value="12" step="1"></label>
+            <label>Delta Y<input id="moveYInput" type="number" value="12" step="1"></label>
+          </div>
+          <div class="button-row" style="margin-top:.75rem">
+            <button id="moveLeftButton" type="button" disabled>Left</button>
+            <button id="moveRightButton" type="button" disabled>Right</button>
+            <button id="moveDownButton" type="button" disabled>Down</button>
+            <button id="moveUpButton" type="button" disabled>Up</button>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Add Text</h2>
+          <label>Text<textarea id="textInput">Editor note</textarea></label>
+          <div class="grid-2" style="margin-top:.75rem">
+            <label>X<input id="textXInput" type="number" value="72" step="1"></label>
+            <label>Y<input id="textYInput" type="number" value="720" step="1"></label>
+            <label>Width<input id="textWidthInput" type="number" value="240" min="1" step="1"></label>
+            <label>Height<input id="textHeightInput" type="number" value="80" min="1" step="1"></label>
+            <label>Font size<input id="fontSizeInput" type="number" value="14" min="1" step="1"></label>
+          </div>
+          <div class="button-row" style="margin-top:.75rem"><button id="addTextButton" class="primary" type="button" disabled>Add text box</button></div>
+        </section>
+        <section class="panel">
+          <h2>Shortcuts</h2>
+          <div class="metric"><span>Clear</span><strong>Esc</strong></div>
+          <div class="metric"><span>Delete</span><strong>Del / Backspace</strong></div>
+          <div class="metric"><span>Save</span><strong>Cmd/Ctrl+S</strong></div>
+          <div class="metric"><span>Nudge</span><strong>Arrows / Shift+Arrows</strong></div>
+          <div class="metric"><span>Undo</span><strong>Cmd/Ctrl+Z</strong></div>
+          <div class="metric"><span>Redo</span><strong>Cmd/Ctrl+Shift+Z</strong></div>
+        </section>
+      </aside>
+    </main>
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+      import { isEditableShortcutTarget, KEYBOARD_ACTIONS, keyboardShortcutFromEvent } from "../shared/keyboard-shortcuts.js";
+      import { canRedo, canUndo, clearHistory, createPdfSnapshotHistory, pushSnapshot, redoSnapshot, undoSnapshot } from "../shared/pdf-history.js";
+      import { areaSelectSelectionItems, canvasDragRect as dragRectFromPoints, hitTestSelectionItems, isAreaDrag, pointerEventToViewerPoints } from "../shared/pointer-interactions.js";
+      import { renderSelectionInspector } from "../shared/selection-inspector.js";
+      import { renderSelectionOverlays } from "../shared/selection-overlays.js";
+      import { clearSelection, createSelectionState, endDrag, replaceSelection, selectItem, selectionItemKey, SELECTION_MODES, SELECTION_MODE_LABELS, selectionSummary, setHoverItem, setSelectionMode, startDrag, updateDrag } from "../shared/selection-state.js";
+      import { drawRgbaToCanvas } from "../shared/viewer-core.js";
+      const RENDER_ANNOTATIONS=0x01;
+      const state={api:null,doc:null,fileName:"",pageIndex:0,pageCount:0,pageSize:null,renderSize:null,zoom:1,rendering:false,dirty:false,selection:createSelectionState(),history:createPdfSnapshotHistory(),selectableItems:[]};
+      const $=(id)=>document.getElementById(id);
+      const el={pdfInput:$("pdfInput"),prevButton:$("prevButton"),nextButton:$("nextButton"),saveButton:$("saveButton"),status:$("status"),fileName:$("fileName"),pageInfo:$("pageInfo"),pageSize:$("pageSize"),zoomInfo:$("zoomInfo"),dirtyInfo:$("dirtyInfo"),selectionModeInfo:$("selectionModeInfo"),selectionInfo:$("selectionInfo"),clearButton:$("clearButton"),deleteButton:$("deleteButton"),undoInfo:$("undoInfo"),redoInfo:$("redoInfo"),undoButton:$("undoButton"),redoButton:$("redoButton"),selectionInspector:$("selectionInspector"),moveXInput:$("moveXInput"),moveYInput:$("moveYInput"),moveLeftButton:$("moveLeftButton"),moveRightButton:$("moveRightButton"),moveDownButton:$("moveDownButton"),moveUpButton:$("moveUpButton"),textInput:$("textInput"),textXInput:$("textXInput"),textYInput:$("textYInput"),textWidthInput:$("textWidthInput"),textHeightInput:$("textHeightInput"),fontSizeInput:$("fontSizeInput"),addTextButton:$("addTextButton"),emptyState:$("emptyState"),pageStack:$("pageStack"),canvas:$("pageCanvas"),overlay:$("overlay")};
+      function setStatus(message,isError=false){el.status.textContent=message;el.status.classList.toggle("error",isError)}
+      async function getApi(){if(!state.api)state.api=await createPdfiumApi({locateFile:(file)=>new URL(`../../dist/${file}`,import.meta.url).href});return state.api}
+      function closeDocument(){if(state.doc)state.doc.close();state.doc=null}
+      function updateControls(){const doc=Boolean(state.doc);const movable=movableSelection().length>0;el.prevButton.disabled=!doc||state.rendering||state.pageIndex<=0;el.nextButton.disabled=!doc||state.rendering||state.pageIndex>=state.pageCount-1;el.saveButton.disabled=!doc||state.rendering||!state.dirty;el.addTextButton.disabled=!doc||state.rendering;el.undoButton.disabled=!doc||state.rendering||!canUndo(state.history);el.redoButton.disabled=!doc||state.rendering||!canRedo(state.history);el.undoInfo.textContent=String(state.history.undoStack.length);el.redoInfo.textContent=String(state.history.redoStack.length);el.deleteButton.disabled=!deletableSelection().length;el.moveLeftButton.disabled=!doc||state.rendering||!movable;el.moveRightButton.disabled=!doc||state.rendering||!movable;el.moveDownButton.disabled=!doc||state.rendering||!movable;el.moveUpButton.disabled=!doc||state.rendering||!movable;el.clearButton.disabled=state.selection.selectedItems.length===0&&!state.selection.currentItem&&!state.selection.hoverItem}
+      function renderSelectionState(){document.querySelectorAll("[data-selection-mode]").forEach((button)=>button.classList.toggle("active",button.dataset.selectionMode===state.selection.mode));el.selectionModeInfo.textContent=SELECTION_MODE_LABELS[state.selection.mode]||state.selection.mode;el.selectionInfo.textContent=selectionSummary(state.selection);renderSelectionInspector(el.selectionInspector,state.selection);updateControls()}
+      function changeSelectionMode(mode){setSelectionMode(state.selection,mode);renderSelectionState();renderOverlays();setStatus(`Edit mode: ${SELECTION_MODE_LABELS[mode]||mode}.`)}
+      function clearEditorSelection(){clearSelection(state.selection);renderSelectionState();renderOverlays();setStatus("Selection cleared.")}
+      function pushHistorySnapshot(label){if(state.doc)pushSnapshot(state.history,label,state.doc.save());updateControls()}
+      async function restoreHistorySnapshot(snapshot,message){if(!snapshot)return;closeDocument();state.doc=state.api.openDocument(snapshot.pdfBytes);state.dirty=true;clearSelection(state.selection);await renderCurrentPage();el.dirtyInfo.textContent="Yes";setStatus(`${message}: ${snapshot.label}. Save the PDF to persist changes.`);updateControls()}
+      async function undoHistory(){try{if(!state.doc||!canUndo(state.history)){setStatus("Nothing to undo.");return}await restoreHistorySnapshot(undoSnapshot(state.history,state.doc.save()),"Undid")}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to undo.",true)}}
+      async function redoHistory(){try{if(!state.doc||!canRedo(state.history)){setStatus("Nothing to redo.");return}await restoreHistorySnapshot(redoSnapshot(state.history,state.doc.save()),"Redid")}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to redo.",true)}}
+      function currentViewport(){return{pageSize:state.pageSize,renderSize:state.renderSize}}
+      function drawRgba(bytes,width,height){drawRgbaToCanvas({canvas:el.canvas,overlay:el.overlay,rgbaBytes:bytes,width,height})}
+      function refreshSelectableItems(){state.selectableItems=[];if(!state.doc)return;try{state.selectableItems=state.doc.getSelectableItems(state.pageIndex)}catch(e){console.warn(e);setStatus(e instanceof Error?e.message:"Unable to refresh selectable items.",true)}}
+      function renderOverlays(){el.overlay.replaceChildren();if(!state.pageSize||!state.renderSize)return;renderSelectionOverlays(el.overlay,state.selection,{viewport:currentViewport(),pageIndex:state.pageIndex,dragRect:state.selection.drag.active&&state.selection.drag.type==="areaSelect"?canvasDragRect():null})}
+      function canvasDragRect(){const drag=state.selection.drag;return drag.active?dragRectFromPoints(drag.startPoint,drag.currentPoint):null}
+      function mergeSelectionItems(existing,added){const seen=new Set(existing.map(selectionItemKey));const merged=[...existing];added.forEach((item)=>{const key=selectionItemKey(item);if(!seen.has(key)){seen.add(key);merged.push(item)}});return merged}
+      function deletableSelection(){return state.selection.selectedItems.filter((item)=>item.pageIndex===state.pageIndex&&(item.kind==="annotation"||item.kind==="pageObject"||item.kind==="image"))}
+      function movableSelection(){return state.selection.selectedItems.filter((item)=>item.pageIndex===state.pageIndex&&(item.kind==="pageObject"||item.kind==="image"))}
+      function isMovableItem(item){return item?.pageIndex===state.pageIndex&&(item.kind==="pageObject"||item.kind==="image")}
+      function isSelectedItem(item){const key=selectionItemKey(item);return state.selection.selectedItems.some((selected)=>selectionItemKey(selected)===key)}
+      function shiftedItem(item,deltaX,deltaY){return{...item,rect:item.rect?{left:item.rect.left+deltaX,bottom:item.rect.bottom+deltaY,right:item.rect.right+deltaX,top:item.rect.top+deltaY}:item.rect}}
+      function previewMoveDrag(currentPdfPoint){const drag=state.selection.drag;if(!drag.active||drag.type!=="moveObjects")return;const start=drag.item?.startPdfPoint;if(!start)return;const deltaX=currentPdfPoint.x-start.x;const deltaY=currentPdfPoint.y-start.y;replaceSelection(state.selection,(drag.item.baseItems||[]).map((item)=>shiftedItem(item,deltaX,deltaY)));renderSelectionState();renderOverlays()}
+      function releasePointer(event){if(el.pageStack.hasPointerCapture?.(event.pointerId))el.pageStack.releasePointerCapture(event.pointerId)}
+      function handlePagePointerDown(event){if(!state.doc||!state.pageSize||!state.renderSize||event.button!==0||state.selection.mode===SELECTION_MODES.PAN)return;event.preventDefault();const points=pointerEventToViewerPoints(event,el.canvas,currentViewport());const hit=hitTestSelectionItems(state.selectableItems,state.selection.mode,points.pdf);if(state.selection.mode===SELECTION_MODES.SELECT_OBJECT&&isMovableItem(hit)){if(!isSelectedItem(hit))selectItem(state.selection,hit,{additive:false});startDrag(state.selection,{type:"moveObjects",startPoint:points.canvas,item:{startPdfPoint:points.pdf,baseItems:movableSelection().map((item)=>({...item,rect:item.rect?{...item.rect}:item.rect}))}});el.pageStack.setPointerCapture(event.pointerId);renderSelectionState();renderOverlays();return}startDrag(state.selection,{type:"areaSelect",startPoint:points.canvas,item:{additive:event.shiftKey,mode:state.selection.mode}});el.pageStack.setPointerCapture(event.pointerId);renderOverlays()}
+      function handlePagePointerMove(event){if(!state.doc||!state.pageSize||!state.renderSize)return;const points=pointerEventToViewerPoints(event,el.canvas,currentViewport());if(state.selection.drag.active){event.preventDefault();updateDrag(state.selection,points.canvas);if(state.selection.drag.type==="moveObjects")previewMoveDrag(points.pdf);else renderOverlays();return}setHoverItem(state.selection,hitTestSelectionItems(state.selectableItems,state.selection.mode,points.pdf));renderSelectionState();renderOverlays()}
+      async function handlePagePointerUp(event){if(!state.selection.drag.active)return;event.preventDefault();const drag=state.selection.drag;const additive=Boolean(drag.item?.additive);const mode=drag.item?.mode||state.selection.mode;const points=pointerEventToViewerPoints(event,el.canvas,currentViewport());updateDrag(state.selection,points.canvas);if(drag.type==="moveObjects"){const rect=canvasDragRect();const start=drag.item?.startPdfPoint;const baseItems=drag.item?.baseItems||[];endDrag(state.selection);releasePointer(event);if(!isAreaDrag(rect)||!start){replaceSelection(state.selection,baseItems);renderSelectionState();renderOverlays();setStatus("Selected object. Drag farther to move it.");return}replaceSelection(state.selection,baseItems);await moveSelectedObjects(points.pdf.x-start.x,points.pdf.y-start.y,"Drag selected objects");return}const rect=canvasDragRect();if(isAreaDrag(rect)){const hits=areaSelectSelectionItems(state.selectableItems,mode,rect,currentViewport());replaceSelection(state.selection,additive?mergeSelectionItems(state.selection.selectedItems,hits):hits);setStatus(hits.length?`Selected ${hits.length} item${hits.length===1?"":"s"}.`:"No selectable items in selected area.")}else{const hit=hitTestSelectionItems(state.selectableItems,mode,points.pdf);selectItem(state.selection,hit,{additive});setStatus(hit?`Selected ${hit.label||hit.kind}.`:"No selectable item at that point.")}endDrag(state.selection);releasePointer(event);renderSelectionState();renderOverlays()}
+      function handlePagePointerCancel(event){if(!state.selection.drag.active)return;if(state.selection.drag.type==="moveObjects")replaceSelection(state.selection,state.selection.drag.item?.baseItems||[]);endDrag(state.selection);releasePointer(event);renderSelectionState();renderOverlays()}
+      function handlePagePointerLeave(){if(state.selection.drag.active)return;setHoverItem(state.selection,null);renderSelectionState();renderOverlays()}
+      async function refreshAfterMutation(message,{preserveSelection=true}={}){const keys=preserveSelection?new Set(state.selection.selectedItems.map(selectionItemKey)):new Set();state.dirty=true;el.dirtyInfo.textContent="Yes";await renderCurrentPage();if(keys.size){const next=state.selectableItems.filter((item)=>keys.has(selectionItemKey(item)));if(next.length)replaceSelection(state.selection,next);else clearSelection(state.selection)}renderSelectionState();renderOverlays();setStatus(`${message} Save the PDF to persist changes.`);updateControls()}
+      async function addText(){try{pushHistorySnapshot("Add text");state.doc.addTextBox({pageIndex:state.pageIndex,text:el.textInput.value,x:Number(el.textXInput.value),y:Number(el.textYInput.value),width:Number(el.textWidthInput.value),height:Number(el.textHeightInput.value),fontSize:Number(el.fontSizeInput.value),fontName:"Helvetica",rgba:0xff172033});await refreshAfterMutation("Text added.")}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to add text.",true)}}
+      async function moveSelectedObjects(deltaX,deltaY,label="Move selected objects"){const items=movableSelection();if(!items.length){setStatus("Select page objects or images before moving.");return}if(!Number.isFinite(deltaX)||!Number.isFinite(deltaY)||(!deltaX&&!deltaY)){setStatus("Enter a non-zero move delta.");return}try{pushHistorySnapshot(label);items.forEach((item)=>state.doc.transformPageObject(state.pageIndex,item.index,{a:1,b:0,c:0,d:1,e:deltaX,f:deltaY}));await refreshAfterMutation(`Moved ${items.length} object${items.length===1?"":"s"} by ${deltaX}, ${deltaY} pt.`)}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to move selected objects.",true)}}
+      async function deleteSelected(){const items=deletableSelection();if(!items.length){setStatus("Selected items cannot be deleted in this sample.");return}try{pushHistorySnapshot("Delete selected items");items.filter((item)=>item.kind==="annotation").sort((a,b)=>b.index-a.index).forEach((item)=>state.doc.deleteAnnotation(state.pageIndex,item.index));items.filter((item)=>item.kind==="pageObject"||item.kind==="image").sort((a,b)=>b.index-a.index).forEach((item)=>state.doc.deletePageObject(state.pageIndex,item.index));clearSelection(state.selection);await refreshAfterMutation(`Deleted ${items.length} item${items.length===1?"":"s"}.`,{preserveSelection:false})}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to delete selected items.",true)}}
+      async function renderCurrentPage(){if(!state.doc||state.rendering)return;state.rendering=true;updateControls();try{state.pageCount=state.doc.pageCount();state.pageSize=state.doc.pageSize(state.pageIndex);const width=Math.max(1,Math.round(state.pageSize.width*state.zoom));const height=Math.max(1,Math.round(state.pageSize.height*state.zoom));state.renderSize={width,height};const rendered=state.doc.renderPage({pageIndex:state.pageIndex,width,height,flags:RENDER_ANNOTATIONS});drawRgba(rendered.rgbaBytes,width,height);refreshSelectableItems();el.emptyState.hidden=true;el.pageStack.hidden=false;el.fileName.textContent=state.fileName||"Loaded PDF";el.pageInfo.textContent=`${state.pageIndex+1} / ${state.pageCount}`;el.pageSize.textContent=`${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;el.zoomInfo.textContent=`${Math.round(state.zoom*100)}%`;el.dirtyInfo.textContent=state.dirty?"Yes":"No";renderSelectionState();renderOverlays();setStatus("Rendered editor page.")}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to render PDF.",true)}finally{state.rendering=false;updateControls()}}
+      async function loadPdf(file){closeDocument();clearHistory(state.history);state.fileName=file.name;state.pageIndex=0;state.pageCount=0;state.dirty=false;clearSelection(state.selection);el.emptyState.hidden=false;el.pageStack.hidden=true;setStatus("Opening PDF...");renderSelectionState();updateControls();try{const api=await getApi();state.doc=api.openDocument(new Uint8Array(await file.arrayBuffer()));await renderCurrentPage()}catch(e){closeDocument();console.error(e);setStatus(e instanceof Error?e.message:"Unable to open PDF.",true)}}
+      async function loadDemoPdf(){try{setStatus("Loading demo.pdf...");const response=await fetch("../demo.pdf");if(!response.ok)throw new Error(`Unable to fetch demo.pdf (${response.status})`);const blob=await response.blob();await loadPdf(new File([blob],"demo.pdf",{type:"application/pdf"}))}catch(e){console.warn(e);setStatus("Demo PDF could not be loaded. Choose a PDF file manually.",true)}}
+      function savePdf(){try{const output=state.doc.save();const blob=new Blob([output],{type:"application/pdf"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`${(state.fileName.replace(/\.pdf$/i,"")||"editor")}-edited.pdf`;a.click();URL.revokeObjectURL(url);state.dirty=false;el.dirtyInfo.textContent="No";updateControls();setStatus("Saved edited PDF.")}catch(e){console.error(e);setStatus(e instanceof Error?e.message:"Unable to save PDF.",true)}}
+      async function handleKeyDown(event){if(isEditableShortcutTarget(event.target))return;const shortcut=keyboardShortcutFromEvent(event);if(!shortcut)return;if(shortcut.preventDefault)event.preventDefault();if(shortcut.action===KEYBOARD_ACTIONS.CLEAR_SELECTION)clearEditorSelection();else if(shortcut.action===KEYBOARD_ACTIONS.DELETE_SELECTION)await deleteSelected();else if(shortcut.action===KEYBOARD_ACTIONS.SAVE&&state.doc&&!state.rendering)savePdf();else if(shortcut.action===KEYBOARD_ACTIONS.UNDO)await undoHistory();else if(shortcut.action===KEYBOARD_ACTIONS.REDO)await redoHistory();else if(shortcut.action===KEYBOARD_ACTIONS.NUDGE)await moveSelectedObjects(shortcut.delta.x,shortcut.delta.y,"Nudge selected objects")}
+      document.querySelectorAll("[data-selection-mode]").forEach((button)=>button.addEventListener("click",()=>changeSelectionMode(button.dataset.selectionMode)));
+      el.pdfInput.addEventListener("change",async()=>{const[file]=el.pdfInput.files;if(file)await loadPdf(file)});
+      el.prevButton.addEventListener("click",async()=>{if(state.pageIndex>0){state.pageIndex-=1;clearSelection(state.selection);await renderCurrentPage()}});
+      el.nextButton.addEventListener("click",async()=>{if(state.pageIndex<state.pageCount-1){state.pageIndex+=1;clearSelection(state.selection);await renderCurrentPage()}});
+      el.clearButton.addEventListener("click",clearEditorSelection);
+      el.deleteButton.addEventListener("click",deleteSelected);
+      el.undoButton.addEventListener("click",undoHistory);
+      el.redoButton.addEventListener("click",redoHistory);
+      el.moveLeftButton.addEventListener("click",()=>moveSelectedObjects(-Math.abs(Number(el.moveXInput.value)||0),0));
+      el.moveRightButton.addEventListener("click",()=>moveSelectedObjects(Math.abs(Number(el.moveXInput.value)||0),0));
+      el.moveDownButton.addEventListener("click",()=>moveSelectedObjects(0,-Math.abs(Number(el.moveYInput.value)||0)));
+      el.moveUpButton.addEventListener("click",()=>moveSelectedObjects(0,Math.abs(Number(el.moveYInput.value)||0)));
+      el.addTextButton.addEventListener("click",addText);
+      el.saveButton.addEventListener("click",savePdf);
+      el.pageStack.addEventListener("pointerdown",handlePagePointerDown);
+      el.pageStack.addEventListener("pointermove",handlePagePointerMove);
+      el.pageStack.addEventListener("pointerup",handlePagePointerUp);
+      el.pageStack.addEventListener("pointercancel",handlePagePointerCancel);
+      el.pageStack.addEventListener("pointerleave",handlePagePointerLeave);
+      window.addEventListener("keydown",handleKeyDown);
+      window.addEventListener("beforeunload",()=>{closeDocument();if(state.api)state.api.destroy()});
+      renderSelectionState();updateControls();loadDemoPdf();
+    </script>
+  </body>
+</html>
