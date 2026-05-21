@@ -325,6 +325,13 @@ history.redo()
 
 Later optimization can move to operation-based undo.
 
+Implementation status:
+
+- Added `examples/shared/pdf-history.js` with bounded undo/redo stacks of full PDF byte snapshots.
+- The full viewer workbench clears history on document load, records snapshots before supported mutations, and restores undo/redo by reopening snapshot bytes.
+- Undo/redo controls show stack counts and are wired to buttons plus `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z`.
+- The current snapshot strategy favors correctness and simple recovery over memory efficiency. Operation-based history can replace it later for large documents.
+
 ### 13) Integrate Into Full Viewer Workbench
 
 Add an `Editor` tab or mode bar to `examples/full-viewer-workbench/`.

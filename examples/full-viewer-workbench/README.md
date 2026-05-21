@@ -17,7 +17,8 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Drag-selects selectable items with a rubber-band rectangle; hold `Shift` to add to the existing selection.
 - Renders selection overlays independently from PDF rendering, including hover boxes, selected boxes, text highlights, resize handles, drag ghosts, and area marquees.
 - Shows a read-only selected item inspector with type, page, bounds, text/content, and item-specific metadata.
-- Uses hover highlighting, double-click selection status, `Escape` to clear selection, `Cmd/Ctrl+S` to save, `Delete`/`Backspace` to delete selected annotations/page objects/images, arrows for planned nudge feedback, and `Cmd/Ctrl+Z` for planned history feedback.
+- Uses hover highlighting, double-click selection status, `Escape` to clear selection, `Cmd/Ctrl+S` to save, `Delete`/`Backspace` to delete selected annotations/page objects/images, arrows for planned nudge feedback, and `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` for undo/redo.
+- Stores bounded full-PDF byte snapshots before mutations and restores undo/redo by reopening snapshot bytes.
 - Applies consistent mutation refresh rules: mark dirty, refresh selectable items, re-render only for visual changes, and preserve or clear selection based on refreshed item identity.
 - Reads permissions, metadata, attachment count, and form field count.
 - Edits common metadata fields with `setMetadata(key, value)`.
