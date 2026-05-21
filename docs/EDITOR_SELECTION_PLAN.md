@@ -62,6 +62,14 @@ Shared selection state should include:
 - current drag state
 - multi-selection set
 
+Initial implementation status:
+
+- Added `examples/shared/selection-state.js`.
+- Defined `pan`, `selectText`, `selectObject`, `selectAnnotation`, `selectFormWidget`, and `areaSelect` modes.
+- Added helpers for mode changes, hover item, selected items, additive selection, drag start/update/end, item keys, and selection summaries.
+- Added an editor mode bar to `examples/full-viewer-workbench/`.
+- The workbench now owns shared selection state and resets it when a new PDF is loaded.
+
 ### 3) Implement Text Hit Testing
 
 Current text search returns bounding boxes only for matching text. A real editor needs text runs or character boxes.

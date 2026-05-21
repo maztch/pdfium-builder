@@ -11,6 +11,7 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Preloads `../demo.pdf` on startup.
 - Loads a replacement PDF from a local file input.
 - Renders the current page with navigation and zoom.
+- Tracks editor selection mode with a shared selection state model.
 - Reads permissions, metadata, attachment count, and form field count.
 - Edits common metadata fields with `setMetadata(key, value)`.
 - Extracts current page text with `pageText(pageIndex)`.
