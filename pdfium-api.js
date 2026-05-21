@@ -893,6 +893,38 @@ export class PdfDocument {
     return this;
   }
 
+  copyPage({ sourceDoc = this, sourcePageIndex = 0, destinationPageIndex = 0 } = {}) {
+    this.assertOpen();
+    if (!sourceDoc || typeof sourceDoc.assertOpen !== "function") {
+      throw new PdfiumApiError("sourceDoc must be an open PdfDocument", 2);
+    }
+    sourceDoc.assertOpen();
+    this.call(
+      "wasm_pdf_copy_page",
+      "number",
+      ["number", "number", "number", "number"],
+      [sourceDoc.handle, sourcePageIndex, this.handle, destinationPageIndex],
+      "Unable to copy page"
+    );
+    return this;
+  }
+
+  importPages({ sourceDoc, pageRange = "", destinationPageIndex = 0 } = {}) {
+    this.assertOpen();
+    if (!sourceDoc || typeof sourceDoc.assertOpen !== "function") {
+      throw new PdfiumApiError("sourceDoc must be an open PdfDocument", 2);
+    }
+    sourceDoc.assertOpen();
+    this.call(
+      "wasm_pdf_import_pages",
+      "number",
+      ["number", "string", "number", "number"],
+      [sourceDoc.handle, pageRange, this.handle, destinationPageIndex],
+      "Unable to import pages"
+    );
+    return this;
+  }
+
   setPageRotation(pageIndex, rotation) {
     this.call(
       "wasm_pdf_set_page_rotation",

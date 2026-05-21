@@ -52,7 +52,7 @@ try {
 }
 ```
 
-The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
+The direct API currently covers lifecycle, save, page count/size/rotation/boxes, permissions, metadata read/write, embedded attachment list/read/add/update/delete, AcroForm field read/write, page text extraction, text search/redaction, text insertion with wrapping/alignment/font selection, page insert/delete/copy/import, page rotation/boxes/size, RGBA image insertion, browser image decoding to RGBA, and page rendering.
 
 Wrapped text insertion:
 

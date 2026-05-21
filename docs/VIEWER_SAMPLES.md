@@ -128,3 +128,5 @@ Standalone viewer samples preload `examples/demo.pdf` on startup and keep their 
 
 - Combine rendering, navigation, search, annotations, metadata, attachments, forms, page objects, page management, and save.
 - Use a tabbed or sidebar layout so each feature remains isolated and testable.
+- Initial sample: [`examples/full-viewer-workbench/`](../examples/full-viewer-workbench/).
+- The initial sample embeds direct high-level API flows and links to focused annotation/page-object samples until those raw-call flows are promoted into direct helpers.

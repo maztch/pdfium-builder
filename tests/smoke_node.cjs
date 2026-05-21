@@ -401,6 +401,17 @@ async function main() {
       assert.equal(doc.pageCount(), 2, 'direct API insertBlankPage should add a page');
       doc.deletePage(1);
       assert.equal(doc.pageCount(), 1, 'direct API deletePage should remove a page');
+      doc.copyPage({ sourcePageIndex: 0, destinationPageIndex: 1 });
+      assert.equal(doc.pageCount(), 2, 'direct API copyPage should duplicate a page');
+      doc.deletePage(1);
+      const importSourceDoc = directApi.openDocument(createMinimalPdf());
+      try {
+        doc.importPages({ sourceDoc: importSourceDoc, pageRange: '1', destinationPageIndex: 1 });
+        assert.equal(doc.pageCount(), 2, 'direct API importPages should import a page range');
+        doc.deletePage(1);
+      } finally {
+        importSourceDoc.close();
+      }
       doc.setMetadata('Title', 'Direct wrapper title');
       assert.equal(doc.metadata('Title'), 'Direct wrapper title', 'direct API metadata should round-trip');
       assert.equal(doc.attachmentCount(), 0, 'direct API attachmentCount should start empty');
