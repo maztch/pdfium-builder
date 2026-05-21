@@ -990,6 +990,17 @@ export class PdfDocument {
     return this;
   }
 
+  setAnnotationBorderWidth(pageIndex, annotationIndex, borderWidth) {
+    this.call(
+      "wasm_pdf_set_annotation_border",
+      "number",
+      ["number", "number", "number", "number"],
+      [this.handle, pageIndex, annotationIndex, borderWidth],
+      "Unable to set annotation border width"
+    );
+    return this;
+  }
+
   setAnnotationText(pageIndex, annotationIndex, contents) {
     this.call(
       "wasm_pdf_set_annotation_text",
@@ -1016,6 +1027,7 @@ export class PdfDocument {
     if (updates.rect) this.setAnnotationRect(pageIndex, annotationIndex, updates.rect);
     if (Object.hasOwn(updates, "color")) this.setAnnotationColor(pageIndex, annotationIndex, updates.color);
     if (Object.hasOwn(updates, "rgba")) this.setAnnotationColor(pageIndex, annotationIndex, updates.rgba);
+    if (Object.hasOwn(updates, "borderWidth")) this.setAnnotationBorderWidth(pageIndex, annotationIndex, updates.borderWidth);
     if (Object.hasOwn(updates, "text")) this.setAnnotationText(pageIndex, annotationIndex, updates.text);
     if (Object.hasOwn(updates, "contents")) this.setAnnotationText(pageIndex, annotationIndex, updates.contents);
     if (Object.hasOwn(updates, "uri")) this.setAnnotationUri(pageIndex, annotationIndex, updates.uri);

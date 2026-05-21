@@ -3429,6 +3429,51 @@ int wasm_pdf_set_annotation_color(uintptr_t handle,
   return 1;
 }
 
+int wasm_pdf_set_annotation_border(uintptr_t handle,
+                                   int page_index,
+                                   int annotation_index,
+                                   double border_width) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (annotation_index < 0 || !std::isfinite(border_width) || border_width < 0) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_ANNOTATION annot = FPDFPage_GetAnnot(page, annotation_index);
+  if (!annot) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  if (!FPDFAnnot_SetBorder(annot, 0, 0, static_cast<float>(border_width))) {
+    FPDFPage_CloseAnnot(annot);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_SET_ANNOTATION_BORDER_FAILED);
+    return 0;
+  }
+
+  FPDFPage_CloseAnnot(annot);
+  FPDF_ClosePage(page);
+  ClearLastError();
+  return 1;
+}
+
 int wasm_pdf_set_annotation_text(uintptr_t handle,
                                  int page_index,
                                  int annotation_index,
