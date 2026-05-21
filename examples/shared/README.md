@@ -10,6 +10,7 @@ These modules hold reusable browser-side viewer helpers used by the examples.
 - [`hit-testing.js`](hit-testing.js): basic point and area hit-testing against selectable item rectangles.
 - [`selection-state.js`](selection-state.js): editor selection modes, selected/hover item state, drag state, and item identity helpers.
 - [`pointer-interactions.js`](pointer-interactions.js): mode-aware selectable item filtering, pointer coordinate conversion, hit testing, and rubber-band area selection helpers.
+- [`selection-overlays.js`](selection-overlays.js): DOM overlay renderer for hover, selected, multi-selected, text-highlight, resize-handle, drag-ghost, and marquee UI.
 
 ## Scope
 

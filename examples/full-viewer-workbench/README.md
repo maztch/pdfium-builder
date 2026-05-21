@@ -15,6 +15,7 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Refreshes normalized current-page selectable items with `getSelectableItems()`.
 - Click-selects selectable text, page objects/images, annotations, and form widgets by active editor mode.
 - Drag-selects selectable items with a rubber-band rectangle; hold `Shift` to add to the existing selection.
+- Renders selection overlays independently from PDF rendering, including hover boxes, selected boxes, text highlights, resize handles, drag ghosts, and area marquees.
 - Uses hover highlighting, double-click selection status, `Escape` to clear selection, `Cmd/Ctrl+S` to save, and `Delete`/`Backspace` to delete selected annotations/page objects/images.
 - Reads permissions, metadata, attachment count, and form field count.
 - Edits common metadata fields with `setMetadata(key, value)`.

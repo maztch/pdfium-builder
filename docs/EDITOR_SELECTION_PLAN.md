@@ -241,6 +241,12 @@ Overlay types:
 
 Do not re-render the PDF for hover/selection changes.
 
+Implementation status:
+
+- Added `examples/shared/selection-overlays.js` as the reusable selection overlay renderer.
+- Full workbench selection overlays now render independently from page rendering through `renderOverlays()`.
+- Added hover boxes, selected and multi-selected boxes, text-specific highlight styling, non-text resize handles, drag ghost outlines, and area-selection marquees.
+
 ### 9) Add Selected Item Inspector
 
 Add a generic inspector panel showing:
