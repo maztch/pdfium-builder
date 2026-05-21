@@ -21,6 +21,7 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fpdfapi/page/cpdf_textobject.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_filespec.h"
@@ -109,6 +110,7 @@ enum WasmPdfError : int {
   WASM_PDF_ERROR_FORM_WRITE_FAILED = 60,
   WASM_PDF_ERROR_REDACTION_FAILED = 61,
   WASM_PDF_ERROR_TEXT_LAYOUT_FAILED = 62,
+  WASM_PDF_ERROR_PAGE_OBJECT_DUPLICATE_FAILED = 63,
 };
 
 int g_last_error = WASM_PDF_ERROR_NONE;
@@ -3828,6 +3830,91 @@ int wasm_pdf_transform_page_object(uintptr_t handle,
   FPDF_ClosePage(page);
   ClearLastError();
   return 1;
+}
+
+int wasm_pdf_duplicate_page_object(uintptr_t handle,
+                                   int page_index,
+                                   int object_index,
+                                   double offset_x,
+                                   double offset_y) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return -1;
+  }
+  if (object_index < 0 || !std::isfinite(offset_x) || !std::isfinite(offset_y)) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return -1;
+  }
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return -1;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return -1;
+  }
+
+  const int object_count = FPDFPage_CountObjects(page);
+  if (object_count < 0) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return -1;
+  }
+  if (object_index >= object_count) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return -1;
+  }
+
+  FPDF_PAGEOBJECT object = FPDFPage_GetObject(page, object_index);
+  if (!object) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_LOOKUP_FAILED);
+    return -1;
+  }
+
+  const CPDF_PageObject* page_object = CPDFPageObjectFromFPDFPageObject(object);
+  const CPDF_TextObject* text_object = page_object ? page_object->AsText() : nullptr;
+  if (!text_object) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DUPLICATE_FAILED);
+    return -1;
+  }
+
+  std::unique_ptr<CPDF_TextObject> cloned_text = text_object->Clone();
+  if (!cloned_text) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DUPLICATE_FAILED);
+    return -1;
+  }
+
+  cloned_text->Transform(CFX_Matrix(1, 0, 0, 1, static_cast<float>(offset_x), static_cast<float>(offset_y)));
+  FPDF_PAGEOBJECT cloned_object = FPDFPageObjectFromCPDFPageObject(cloned_text.release());
+  if (!FPDFPage_InsertObject(page, cloned_object)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
+    return -1;
+  }
+
+  if (!FPDFPage_GenerateContent(page)) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
+    return -1;
+  }
+
+  const int updated_count = FPDFPage_CountObjects(page);
+  FPDF_ClosePage(page);
+  if (updated_count != object_count + 1) {
+    SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DUPLICATE_FAILED);
+    return -1;
+  }
+
+  ClearLastError();
+  return updated_count - 1;
 }
 
 int wasm_pdf_insert_blank_page(uintptr_t handle,

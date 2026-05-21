@@ -64,6 +64,7 @@ const ERROR_NAMES = Object.freeze({
   60: "form_write_failed",
   61: "redaction_failed",
   62: "text_layout_failed",
+  63: "page_object_duplicate_failed",
 });
 
 class PdfiumWorkerError extends Error {

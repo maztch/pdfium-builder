@@ -16,13 +16,16 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Click-selects or rubber-band selects normalized selectable items from `getSelectableItems()`.
 - Shows an I-beam cursor in Text mode and renders selected text as square translucent highlight areas.
 - Groups Text-mode drag selections into continuous line/range highlights instead of separate run boxes.
-- Copies selected text with the Copy selected text button or `Cmd/Ctrl+C`.
+- Copies selected text with the Copy selected text button or `Cmd/Ctrl+C`, preserving spaces and punctuation from PDF character order.
 - Sets add-text coordinates by clicking empty page space in Text mode.
 - Shows a selected item inspector.
-- Shows a floating selection toolbar near the selected item with copy, delete, move, resize, and edit-focus actions.
+- Shows an accessible icon-only floating selection toolbar near the selected item with copy, delete, move, resize, and edit-focus actions.
 - Edits selected page object/image X, Y, width, and height from the object geometry panel.
 - Edits selected annotation rectangle, color, border width, text, and URI from the annotation editor panel.
 - Moves selected page objects/images/annotations by dragging directly on the canvas, with buttons, or with arrow-key nudge.
+- Constrains drag movement to the dominant axis while holding Shift.
+- Shows snap guides while dragging near page edges, page centers, and nearby selectable item edges/centers.
+- Duplicates selected text page objects with a small offset and selects the duplicates.
 - Resizes selected page objects/images by dragging selection handles in Object mode.
 - Resizes selected annotation rectangles by dragging selection handles in Annotation mode.
 - Adds a text box with `addTextBox()`.
@@ -62,8 +65,13 @@ http://localhost:8080/examples/editor-mode/
 - Annotation resize updates annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation property edits call `updateAnnotation()` with `rect`, `rgba`, `borderWidth`, `contents`, and `uri` as applicable.
 - Drag-to-move starts in Object mode on page objects/images or in Annotation mode on annotations. Dragging empty space still performs area selection.
+- Shift-drag axis locking and snap guides only apply to direct canvas movement for selected page objects/images/annotations.
+- Snap guides use a small PDF-space threshold and snap selected bounds against page margins, page center lines, and nearby selectable item bounds.
+- Duplicate support currently applies to text page objects only. Image/path/form object duplication needs broader native clone support.
+- The floating toolbar uses inline SVG icons, browser-native tooltips, and accessible labels without adding a runtime icon dependency.
 - The floating toolbar uses the same move delta inputs as the Move Items panel. Its grow/shrink actions resize one selected page object, image, or annotation around its center.
 - Undo/redo uses bounded full-PDF byte snapshots, which is simple and reliable but not memory optimal for large PDFs.
+- Text copy reconstructs selected ranges from `pageText()` character indexes instead of concatenating visible text-run boxes, so hidden spaces and punctuation placement are preserved.
 
 ## Completed Editor Actions
 
@@ -75,9 +83,9 @@ http://localhost:8080/examples/editor-mode/
 - Add an editable inspector for annotation text, URI, color, border width, and rectangle values.
 - Add numeric inspector controls for selected object/image position and size.
 - Add a floating selection toolbar with delete, move, resize, and edit actions near the selected item.
+- Add Shift-constrained movement and optional snap guides for margins, page center, and nearby objects.
+- Add duplicate support for selected text page objects.
 
 ## Next Actions
 
-- Add Shift-constrained movement and optional snap guides for margins, page center, and nearby objects.
-- Add duplicate support for selected objects if native object copy/import support is exposed.
 - Replace full-PDF snapshot undo with operation-based undo once editor mutations become more granular.

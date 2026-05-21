@@ -64,6 +64,7 @@ export const PDFIUM_ERROR_NAMES = Object.freeze({
   60: "form_write_failed",
   61: "redaction_failed",
   62: "text_layout_failed",
+  63: "page_object_duplicate_failed",
 });
 
 export const PAGE_OBJECT_TYPE_NAMES = Object.freeze({
@@ -1044,6 +1045,18 @@ export class PdfDocument {
       "Unable to transform page object"
     );
     return this;
+  }
+
+  duplicatePageObject(pageIndex, objectIndex, { offsetX = 12, offsetY = -12 } = {}) {
+    this.assertOpen();
+    const duplicateIndex = this.mod.ccall(
+      "wasm_pdf_duplicate_page_object",
+      "number",
+      ["number", "number", "number", "number", "number"],
+      [this.handle, pageIndex, objectIndex, offsetX, offsetY]
+    );
+    if (duplicateIndex < 0) this.api.throwLastError("Unable to duplicate page object");
+    return duplicateIndex;
   }
 
   searchPageText(pageIndex = 0, query = "", flags = 0) {

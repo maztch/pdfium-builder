@@ -73,6 +73,7 @@ Status legend:
 | Enumerate page objects | `wasm_pdf_page_object_count`, `wasm_pdf_get_page_object_info` | `queryPageObjects` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API returns selection-friendly object records with index, type, type name, and bounds. |
 | Delete page object | `wasm_pdf_delete_page_object` | `deletePageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct and worker APIs regenerate page content after deletion. |
 | Transform page object | `wasm_pdf_transform_page_object` | `transformPageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API accepts object or array affine matrices; matrix must be invertible. |
+| Duplicate text page object | `wasm_pdf_duplicate_page_object` | No | Yes | [API](API.md#page-content-objects), [Editor example](../examples/editor-mode/) | Experimental | Uses PDFium internal text-object cloning; generic image/path/form object cloning is not exposed yet. |
 
 ## Annotations
 

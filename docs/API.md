@@ -206,8 +206,9 @@ Redaction note: this build does not expose PDFium's apply-redactions API. `wasm_
 - `wasm_pdf_get_page_object_info(handle, pageIndex, objectIndex, typePtr, leftPtr, bottomPtr, rightPtr, topPtr)` writes object type and PDF user-space bounds.
 - `wasm_pdf_delete_page_object(handle, pageIndex, objectIndex)` removes a content object and regenerates page content.
 - `wasm_pdf_transform_page_object(handle, pageIndex, objectIndex, a, b, c, d, e, f)` applies an affine matrix and regenerates page content.
+- `wasm_pdf_duplicate_page_object(handle, pageIndex, objectIndex, offsetX, offsetY)` duplicates a supported page object and returns the new object index, or `-1` on failure. Current native support is intentionally limited to text page objects because PDFium does not expose a generic public clone API for all object types.
 
-The direct ES module wraps these as `doc.pageObjectCount(pageIndex)`, `doc.pageObjectInfo(pageIndex, objectIndex)`, `doc.pageObjects(pageIndex)`, `doc.deletePageObject(pageIndex, objectIndex)`, and `doc.transformPageObject(pageIndex, objectIndex, matrix)`. Direct page object records include `kind: "pageObject"`, `pageIndex`, `key`, `label`, `typeName`, and a PDF user-space `rect`.
+The direct ES module wraps these as `doc.pageObjectCount(pageIndex)`, `doc.pageObjectInfo(pageIndex, objectIndex)`, `doc.pageObjects(pageIndex)`, `doc.deletePageObject(pageIndex, objectIndex)`, `doc.transformPageObject(pageIndex, objectIndex, matrix)`, and `doc.duplicatePageObject(pageIndex, objectIndex, { offsetX, offsetY })`. Direct page object records include `kind: "pageObject"`, `pageIndex`, `key`, `label`, `typeName`, and a PDF user-space `rect`.
 
 Page object types:
 
@@ -362,3 +363,4 @@ Common render flag:
 - `60`: form write failed
 - `61`: redaction failed
 - `62`: text layout failed
+- `63`: page object duplicate failed

@@ -494,6 +494,26 @@ async function main() {
         { left: 80, bottom: 170, right: 104, top: 194 },
         'direct API transformPageObject should update object bounds'
       );
+      const textObject = doc.pageObjects(0).find((object) => object.type === 1 && object.rect.bottom > 180);
+      assert.ok(textObject, 'direct API pageObjects should expose inserted wrapped text page objects');
+      const duplicateIndex = doc.duplicatePageObject(0, textObject.index, { offsetX: 12, offsetY: -12 });
+      const duplicateObject = doc.pageObjectInfo(0, duplicateIndex);
+      assert.equal(duplicateObject.type, 1, 'direct API duplicatePageObject should create a text object copy');
+      assert.deepEqual(
+        duplicateObject.rect,
+        {
+          left: textObject.rect.left + 12,
+          bottom: textObject.rect.bottom - 12,
+          right: textObject.rect.right + 12,
+          top: textObject.rect.top - 12,
+        },
+        'direct API duplicatePageObject should apply the requested offset'
+      );
+      assert.throws(
+        () => doc.duplicatePageObject(0, imageObject.index),
+        (error) => error instanceof PdfiumApiError && error.code === 63,
+        'direct API duplicatePageObject should reject unsupported object types'
+      );
       const imageSelectableItems = doc.getSelectableItems(0, { text: false, annotations: false, formWidgets: false });
       assert.ok(imageSelectableItems.some((item) => item.kind === 'image' && item.data.pageObjectKind === 'pageObject'), 'direct API getSelectableItems should classify image page objects');
       const objectCountBeforeDelete = doc.pageObjectCount(0);
