@@ -305,15 +305,43 @@ Object types are listed in [API Reference](API.md#page-content-objects).
 
 | Field | Type | Required | Default | Notes |
 |---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
 | `query` | string | Yes | `""` | Search text. |
 | `pageIndex` | number | No | `0` | Target page. |
 | `flags` | number | No | `0` | `1` match case, `2` whole word, `4` consecutive. |
+| `password` | string | No | `""` | PDF password. |
 
 Returns `{ matches }`, where each match has:
 
 ```js
 { startIndex, charCount, rects }
 ```
+
+## `queryPageTextRuns`
+
+| Field | Type | Required | Default | Notes |
+|---|---|---:|---|---|
+| `pdfBytes` | `ArrayBuffer` or typed array | Yes | | Input PDF. |
+| `pageIndex` | number | No | `0` | Target page. |
+| `password` | string | No | `""` | PDF password. |
+
+Returns `{ textRuns }`, where each run has:
+
+```js
+{
+  index,
+  pageIndex,
+  startIndex,
+  charCount,
+  text,
+  rect: { left, bottom, right, top },
+  kind: "text",
+  key,
+  label
+}
+```
+
+The current implementation emits one visible character per run for hit testing.
 
 ## `redactPageText`
 

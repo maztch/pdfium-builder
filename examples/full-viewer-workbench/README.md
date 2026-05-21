@@ -12,6 +12,7 @@ This sample combines the direct ES module viewer/editor flows into one tabbed br
 - Loads a replacement PDF from a local file input.
 - Renders the current page with navigation and zoom.
 - Tracks editor selection mode with a shared selection state model.
+- Click-selects visible text runs in Text selection mode.
 - Reads permissions, metadata, attachment count, and form field count.
 - Edits common metadata fields with `setMetadata(key, value)`.
 - Extracts current page text with `pageText(pageIndex)`.

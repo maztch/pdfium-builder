@@ -478,6 +478,10 @@ async function main() {
       });
       assert.match(doc.pageText(0), /Direct wrapper text/, 'direct API pageText should read inserted text');
       assert.match(doc.pageText(0), /Direct[\r\n]+wrapped/, 'direct API pageText should read wrapped inserted text');
+      if (typeof directApi.mod._wasm_pdf_get_page_text_runs === 'function') {
+        const textRuns = doc.pageTextRuns(0);
+        assert.ok(textRuns.some((run) => run.text === 'D' && run.rect.right > run.rect.left), 'direct API pageTextRuns should expose text hit-test rectangles');
+      }
       const matches = doc.searchPageText(0, 'Direct wrapper', 0);
       assert.equal(matches.length, 1, 'direct API search should return one match');
       assert.equal(doc.redactPageText({ pageIndex: 0, query: 'Direct wrapper', flags: 0, rgba: 0xff000000 }), 1, 'direct API redactPageText should redact one match');

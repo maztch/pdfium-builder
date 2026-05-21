@@ -35,6 +35,7 @@ Status legend:
 | Embedded attachment update/delete | `wasm_pdf_set_attachment_file`, `wasm_pdf_delete_attachment` | `updateAttachment`, `deleteAttachment` | Yes | [API](API.md#embedded-attachments), [Worker Protocol](WORKER_PROTOCOL.md#updateattachment) | Stable | Replaces attachment bytes/MIME type or removes an attachment entry. |
 | AcroForm field read | `wasm_pdf_get_form_fields` | `queryFormFields` | Yes | [API](API.md#forms), [Worker Protocol](WORKER_PROTOCOL.md#queryformfields) | Stable | Returns field names, types, flags, values, defaults, widget geometry, checkbox/radio state, choice options, selected indexes, and appearance presence. |
 | Text extraction | `wasm_pdf_get_page_text` | No | Yes | [API](API.md#text-extraction-and-search) | Partial | Worker supports search, but not full extraction. |
+| Text hit-test runs | `wasm_pdf_get_page_text_runs` | `queryPageTextRuns` | Yes | [API](API.md#text-extraction-and-search), [Worker Protocol](WORKER_PROTOCOL.md#querypagetextruns) | Initial | Emits visible character-level runs with PDF-space rectangles for selection hit testing. |
 | Text search with bounding boxes | `wasm_pdf_search_page_text` | `searchPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker](WORKER.md#message-protocol) | Stable | Returns match indexes and per-match rectangles. |
 | Text redaction | `wasm_pdf_redact_page_text` | `redactPageText` | Yes | [API](API.md#text-extraction-and-search), [Worker Protocol](WORKER_PROTOCOL.md#redactpagetext) | Partial | Removes intersecting text objects and paints cover rectangles; object-level limitation is documented. |
 | Annotation count/details | `wasm_pdf_annotation_count`, `wasm_pdf_get_annotation_info` | `queryAnnotations` | Yes | [API](API.md#annotations), [Worker Protocol](WORKER_PROTOCOL.md#queryannotations) | Stable | Worker returns subtype, flags, rect, color, border, contents, URI, and quadpoints. |
@@ -133,6 +134,7 @@ Status legend:
 | `setPageSize` | Set page media size | Saved PDF bytes | Stable | Sets media box to `[0, 0, width, height]`. |
 | `queryPageObjects` | Page object count/info | Object array | Stable | Read-only. |
 | `searchPageText` | Text search rectangles | Match array | Stable | Parses binary native buffer. |
+| `queryPageTextRuns` | Text hit-test rectangles | Text run array | Initial | Emits visible character-level runs. |
 | `redactPageText` | Search text, remove intersecting text objects, add cover rectangles | Saved PDF bytes and count | Partial | Can remove more than exact match when one text object contains multiple words. |
 | `queryOutline` | Outline/bookmark navigation | Nested outline tree | Stable | Parses binary native buffer. |
 | `queryAttachments` | Embedded attachment listing | Attachment metadata array | Stable | Read-only. |

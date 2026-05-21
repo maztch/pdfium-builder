@@ -230,6 +230,45 @@ function parseSearchResults(bytes) {
   return matches;
 }
 
+function parseTextRuns(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const runs = [];
+  let offset = 0;
+  const runCount = view.getUint32(offset, true);
+  offset += 4;
+
+  for (let runPosition = 0; runPosition < runCount; runPosition += 1) {
+    const index = view.getInt32(offset, true);
+    offset += 4;
+    const startIndex = view.getInt32(offset, true);
+    offset += 4;
+    const charCount = view.getInt32(offset, true);
+    offset += 4;
+    const rect = {
+      left: view.getFloat64(offset, true),
+      bottom: view.getFloat64(offset + 8, true),
+      right: view.getFloat64(offset + 16, true),
+      top: view.getFloat64(offset + 24, true),
+    };
+    offset += 32;
+    const textSize = view.getUint32(offset, true);
+    offset += 4;
+    const text = textDecoder.decode(bytes.subarray(offset, offset + textSize));
+    offset += textSize;
+    runs.push({
+      index,
+      startIndex,
+      charCount,
+      text,
+      rect,
+      kind: "text",
+      label: text || `Text ${index}`,
+    });
+  }
+
+  return runs;
+}
+
 function parseAttachmentInfo(bytes, index) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let offset = 0;
@@ -576,6 +615,23 @@ export class PdfDocument {
       "Unable to extract page text"
     );
     return textDecoder.decode(bytes);
+  }
+
+  pageTextRuns(pageIndex = 0) {
+    const bytes = this.outputBytes(
+      (outPtrPtr, outSizePtr) => this.mod.ccall(
+        "wasm_pdf_get_page_text_runs",
+        "number",
+        ["number", "number", "number", "number"],
+        [this.handle, pageIndex, outPtrPtr, outSizePtr]
+      ),
+      "Unable to query page text runs"
+    );
+    return parseTextRuns(bytes).map((run) => ({
+      ...run,
+      pageIndex,
+      key: `text:${pageIndex}:${run.index}`,
+    }));
   }
 
   searchPageText(pageIndex = 0, query = "", flags = 0) {

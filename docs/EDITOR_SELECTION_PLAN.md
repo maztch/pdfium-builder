@@ -102,6 +102,15 @@ Viewer behavior:
 - Overlay shows selected text rectangles.
 - Inspector shows selected text and range.
 
+Initial implementation status:
+
+- Added native `wasm_pdf_get_page_text_runs`.
+- Added direct `doc.pageTextRuns(pageIndex)`.
+- Added worker `queryPageTextRuns`.
+- Added character-level text run parsing in direct and worker APIs.
+- Wired full workbench Text selection mode to click-hit-test current page text runs.
+- Drag text selection is still pending for the pointer interaction step.
+
 ### 4) Promote Page Object Helpers To Direct API
 
 Page object native APIs already exist, but the workbench needs direct-wrapper methods.

@@ -295,6 +295,31 @@ void AppendBytes(std::vector<uint8_t>* data, const uint8_t* bytes, uint32_t size
   }
 }
 
+bool EncodeCodePointToUtf8(uint32_t code_point, std::vector<uint8_t>* output) {
+  if (!output || code_point == 0 || code_point > 0x10FFFF ||
+      (code_point >= 0xD800 && code_point <= 0xDFFF)) {
+    return false;
+  }
+
+  if (code_point <= 0x7F) {
+    output->push_back(static_cast<uint8_t>(code_point));
+  } else if (code_point <= 0x7FF) {
+    output->push_back(static_cast<uint8_t>(0xC0 | (code_point >> 6)));
+    output->push_back(static_cast<uint8_t>(0x80 | (code_point & 0x3F)));
+  } else if (code_point <= 0xFFFF) {
+    output->push_back(static_cast<uint8_t>(0xE0 | (code_point >> 12)));
+    output->push_back(static_cast<uint8_t>(0x80 | ((code_point >> 6) & 0x3F)));
+    output->push_back(static_cast<uint8_t>(0x80 | (code_point & 0x3F)));
+  } else {
+    output->push_back(static_cast<uint8_t>(0xF0 | (code_point >> 18)));
+    output->push_back(static_cast<uint8_t>(0x80 | ((code_point >> 12) & 0x3F)));
+    output->push_back(static_cast<uint8_t>(0x80 | ((code_point >> 6) & 0x3F)));
+    output->push_back(static_cast<uint8_t>(0x80 | (code_point & 0x3F)));
+  }
+
+  return true;
+}
+
 bool GetBookmarkTitleUtf8(FPDF_BOOKMARK bookmark, std::vector<uint8_t>* title) {
   if (!bookmark || !title) return false;
 
@@ -2274,6 +2299,97 @@ int wasm_pdf_get_page_text(uintptr_t handle,
   const ByteString utf8 = FX_UTF8Encode(wide.AsStringView());
   const auto* utf8_data = reinterpret_cast<const uint8_t*>(utf8.c_str());
   if (!CopyBytesToMalloc(utf8_data, utf8.GetLength(), out_ptr, out_size)) {
+    return 0;
+  }
+
+  ClearLastError();
+  return 1;
+}
+
+int wasm_pdf_get_page_text_runs(uintptr_t handle,
+                                int page_index,
+                                uint8_t** out_ptr,
+                                uint32_t* out_size) {
+  if (!g_pdfium_initialized) {
+    SetLastError(WASM_PDF_ERROR_NOT_INITIALIZED);
+    return 0;
+  }
+  if (!out_ptr || !out_size) {
+    SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
+    return 0;
+  }
+
+  *out_ptr = nullptr;
+  *out_size = 0;
+
+  FPDF_DOCUMENT doc = GetDocument(handle);
+  if (!doc) {
+    SetLastError(WASM_PDF_ERROR_INVALID_HANDLE);
+    return 0;
+  }
+
+  FPDF_PAGE page = FPDF_LoadPage(doc, page_index);
+  if (!page) {
+    SetLastError(PdfiumLastErrorToWasmError(WASM_PDF_ERROR_LOAD_PAGE_FAILED));
+    return 0;
+  }
+
+  FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+  if (!text_page) {
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_LOAD_TEXT_PAGE_FAILED);
+    return 0;
+  }
+
+  const int char_count = FPDFText_CountChars(text_page);
+  if (char_count < 0) {
+    FPDFText_ClosePage(text_page);
+    FPDF_ClosePage(page);
+    SetLastError(WASM_PDF_ERROR_TEXT_EXTRACTION_FAILED);
+    return 0;
+  }
+
+  std::vector<uint8_t> result;
+  AppendUint32(&result, 0);
+  uint32_t run_count = 0;
+  for (int char_index = 0; char_index < char_count; ++char_index) {
+    double left = 0;
+    double right = 0;
+    double bottom = 0;
+    double top = 0;
+    if (!FPDFText_GetCharBox(text_page, char_index, &left, &right, &bottom, &top)) {
+      continue;
+    }
+    if (!(right > left && top > bottom)) {
+      continue;
+    }
+
+    std::vector<uint8_t> utf8;
+    const uint32_t unicode = FPDFText_GetUnicode(text_page, char_index);
+    if (!EncodeCodePointToUtf8(unicode, &utf8)) {
+      continue;
+    }
+
+    AppendInt32(&result, static_cast<int32_t>(run_count));
+    AppendInt32(&result, char_index);
+    AppendInt32(&result, 1);
+    AppendDouble(&result, left);
+    AppendDouble(&result, bottom);
+    AppendDouble(&result, right);
+    AppendDouble(&result, top);
+    AppendBytes(&result, utf8.data(), static_cast<uint32_t>(utf8.size()));
+    ++run_count;
+  }
+
+  FPDFText_ClosePage(text_page);
+  FPDF_ClosePage(page);
+
+  result[0] = static_cast<uint8_t>(run_count & 0xFF);
+  result[1] = static_cast<uint8_t>((run_count >> 8) & 0xFF);
+  result[2] = static_cast<uint8_t>((run_count >> 16) & 0xFF);
+  result[3] = static_cast<uint8_t>((run_count >> 24) & 0xFF);
+
+  if (!CopyVectorToMalloc(result, out_ptr, out_size)) {
     return 0;
   }
 

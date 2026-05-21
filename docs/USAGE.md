@@ -93,6 +93,17 @@ await pdfium.withDocument(inputBytes, (doc) => {
 
 Redaction is object-level in this build: matching text objects are removed and cover rectangles are painted over match bounds.
 
+Text hit-testing:
+
+```js
+await pdfium.withDocument(inputBytes, (doc) => {
+  const runs = doc.pageTextRuns(0);
+  console.log(runs[0]?.text, runs[0]?.rect);
+});
+```
+
+`pageTextRuns()` currently returns visible character-level runs with PDF user-space rectangles. This is intended for viewer hit testing and selection overlays.
+
 Basic AcroForm usage:
 
 ```js
