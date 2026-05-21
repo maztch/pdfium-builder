@@ -11,7 +11,7 @@ These modules hold reusable browser-side viewer helpers used by the examples.
 - [`keyboard-shortcuts.js`](keyboard-shortcuts.js): keyboard shortcut classification and editable-target filtering for viewer/editor commands.
 - [`pdf-history.js`](pdf-history.js): bounded full-PDF byte snapshot stacks for undo/redo foundations.
 - [`selection-state.js`](selection-state.js): editor selection modes, selected/hover item state, drag state, and item identity helpers.
-- [`selection-inspector.js`](selection-inspector.js): read-only selected item inspector renderer for the normalized selectable item shape.
+- [`selection-inspector.js`](selection-inspector.js): read-only selected item inspector renderer for the normalized selectable item shape, including multi-select summaries.
 - [`pointer-interactions.js`](pointer-interactions.js): mode-aware selectable item filtering, pointer coordinate conversion, hit testing, and rubber-band area selection helpers.
 - [`selection-overlays.js`](selection-overlays.js): DOM overlay renderer for hover, selected, multi-selected, text-highlight, resize-handle, drag-ghost, and marquee UI.
 

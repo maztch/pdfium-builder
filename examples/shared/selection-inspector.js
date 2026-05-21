@@ -10,7 +10,7 @@ export function renderSelectionInspector(container, selection) {
   }
 
   if (selection.selectedItems.length > 1) {
-    appendMetric(container, "Selected items", String(selection.selectedItems.length));
+    appendMultiSelectionSummary(container, selection.selectedItems);
     const list = document.createElement("div");
     list.className = "inspector-list";
     selection.selectedItems.forEach((item) => {
@@ -31,6 +31,14 @@ export function renderSelectionInspector(container, selection) {
   appendMetric(container, "Key", item.key || "-");
   appendRect(container, item.rect);
   appendKindDetails(container, item);
+}
+
+function appendMultiSelectionSummary(container, items) {
+  appendMetric(container, "Selected items", String(items.length));
+  appendMetric(container, "Pages", formatPages(items));
+  appendMetric(container, "Counts", formatKindCounts(items));
+  appendMetric(container, "Available actions", formatAvailableActions(items));
+  appendRect(container, unionRects(items.map((item) => item.rect).filter(Boolean)), "Selection bounds");
 }
 
 function appendKindDetails(container, item) {
@@ -72,11 +80,12 @@ function appendKindDetails(container, item) {
   }
 }
 
-function appendRect(container, rect) {
+function appendRect(container, rect, label = "Bounds") {
   if (!rect) {
-    appendMetric(container, "Bounds", "-");
+    appendMetric(container, label, "-");
     return;
   }
+  if (label !== "Bounds") appendMetric(container, label, `${formatNumber(rect.right - rect.left)} x ${formatNumber(rect.top - rect.bottom)}`);
   appendMetric(container, "Left", formatNumber(rect.left));
   appendMetric(container, "Bottom", formatNumber(rect.bottom));
   appendMetric(container, "Right", formatNumber(rect.right));
@@ -94,6 +103,49 @@ function appendMetric(container, label, value) {
   strong.textContent = String(value);
   row.append(name, strong);
   container.append(row);
+}
+
+function unionRects(rects) {
+  return rects.reduce((bounds, rect) => {
+    if (!bounds) return { ...rect };
+    return {
+      left: Math.min(bounds.left, rect.left),
+      bottom: Math.min(bounds.bottom, rect.bottom),
+      right: Math.max(bounds.right, rect.right),
+      top: Math.max(bounds.top, rect.top),
+    };
+  }, null);
+}
+
+function formatPages(items) {
+  const pages = [...new Set(items.map((item) => item.pageIndex).filter(Number.isInteger).map((pageIndex) => pageIndex + 1))].sort((a, b) => a - b);
+  return pages.length ? pages.join(", ") : "-";
+}
+
+function formatKindCounts(items) {
+  const labels = {
+    annotation: "annotations",
+    formWidget: "form widgets",
+    image: "images",
+    pageObject: "page objects",
+    text: "text",
+  };
+  const counts = new Map();
+  items.forEach((item) => counts.set(item.kind || "unknown", (counts.get(item.kind || "unknown") || 0) + 1));
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([kind, count]) => `${count} ${labels[kind] || kind}`)
+    .join(", ");
+}
+
+function formatAvailableActions(items) {
+  const actions = [];
+  if (items.some((item) => item.kind === "text")) actions.push("copy text");
+  if (items.some((item) => item.kind === "pageObject" || item.kind === "image" || item.kind === "annotation")) actions.push("move");
+  if (items.length === 1 && items[0].rect && (items[0].kind === "pageObject" || items[0].kind === "image" || items[0].kind === "annotation")) actions.push("resize");
+  if (items.some((item) => item.kind === "annotation" || item.kind === "pageObject" || item.kind === "image")) actions.push("delete");
+  if (items.some((item) => item.kind === "pageObject" && item.type === 1)) actions.push("duplicate text objects");
+  return actions.length ? actions.join(", ") : "inspect";
 }
 
 function valueOrDash(value) {

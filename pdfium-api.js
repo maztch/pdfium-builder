@@ -1035,6 +1035,71 @@ export class PdfDocument {
     return this;
   }
 
+  addHighlightAnnotation(pageIndex = 0, rect = {}, rgba = 0x80ffff00) {
+    const { left = 0, bottom = 0, right = 0, top = 0 } = rect;
+    this.call(
+      "wasm_pdf_add_highlight_annotation",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number"],
+      [this.handle, pageIndex, left, bottom, right, top, rgba],
+      "Unable to add highlight annotation"
+    );
+    return this;
+  }
+
+  addRectangleAnnotation(pageIndex = 0, rect = {}, { rgba = 0xffff0000, borderWidth = 1 } = {}) {
+    const { left = 0, bottom = 0, right = 0, top = 0 } = rect;
+    this.call(
+      "wasm_pdf_add_rectangle_annotation",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "number", "number"],
+      [this.handle, pageIndex, left, bottom, right, top, rgba, borderWidth],
+      "Unable to add rectangle annotation"
+    );
+    return this;
+  }
+
+  addLinkAnnotation(pageIndex = 0, rect = {}, uri = "") {
+    const { left = 0, bottom = 0, right = 0, top = 0 } = rect;
+    this.call(
+      "wasm_pdf_add_link_annotation",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "string"],
+      [this.handle, pageIndex, left, bottom, right, top, uri],
+      "Unable to add link annotation"
+    );
+    return this;
+  }
+
+  addTextNoteAnnotation(pageIndex = 0, { x = 0, y = 0, contents = "", rgba = 0xffffff00 } = {}) {
+    this.call(
+      "wasm_pdf_add_text_note_annotation",
+      "number",
+      ["number", "number", "number", "number", "string", "number"],
+      [this.handle, pageIndex, x, y, contents, rgba],
+      "Unable to add text note annotation"
+    );
+    return this;
+  }
+
+  addFreeTextAnnotation(pageIndex = 0, rect = {}, {
+    contents = "",
+    fontSize = 12,
+    textRgba = 0xff000000,
+    borderRgba = 0xff000000,
+    borderWidth = 1,
+  } = {}) {
+    const { left = 0, bottom = 0, right = 0, top = 0 } = rect;
+    this.call(
+      "wasm_pdf_add_freetext_annotation",
+      "number",
+      ["number", "number", "number", "number", "number", "number", "string", "number", "number", "number", "number"],
+      [this.handle, pageIndex, left, bottom, right, top, contents, fontSize, textRgba, borderRgba, borderWidth],
+      "Unable to add FreeText annotation"
+    );
+    return this;
+  }
+
   transformPageObject(pageIndex, objectIndex, matrix = {}) {
     const { a, b, c, d, e, f } = normalizeMatrix(matrix);
     this.call(

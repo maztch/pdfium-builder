@@ -18,16 +18,20 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Groups Text-mode drag selections into continuous line/range highlights instead of separate run boxes.
 - Copies selected text with the Copy selected text button or `Cmd/Ctrl+C`, preserving spaces and punctuation from PDF character order.
 - Sets add-text coordinates by clicking empty page space in Text mode.
-- Shows a selected item inspector.
+- Sets add-text box bounds by dragging an empty rectangle in Text mode.
+- Shows a selected item inspector, including multi-select counts, bounds, and available actions.
+- Replaces selected text page objects with edited content, font, size, and color.
 - Shows an accessible icon-only floating selection toolbar near the selected item with copy, delete, move, resize, and edit-focus actions.
 - Edits selected page object/image X, Y, width, and height from the object geometry panel.
 - Edits selected annotation rectangle, color, border width, text, and URI from the annotation editor panel.
+- Creates highlight, rectangle, text note, FreeText, and link annotations from the sidebar panel or floating toolbar using selection bounds or the Add Text rectangle.
 - Moves selected page objects/images/annotations by dragging directly on the canvas, with buttons, or with arrow-key nudge.
 - Constrains drag movement to the dominant axis while holding Shift.
 - Shows snap guides while dragging near page edges, page centers, and nearby selectable item edges/centers.
 - Duplicates selected text page objects with a small offset and selects the duplicates.
 - Resizes selected page objects/images by dragging selection handles in Object mode.
 - Resizes selected annotation rectangles by dragging selection handles in Annotation mode.
+- Shows direction-specific cursors when hovering or dragging resize handles.
 - Adds a text box with `addTextBox()`.
 - Deletes selected annotations, page objects, and images where supported.
 - Stores full-PDF snapshots for undo/redo.
@@ -61,9 +65,11 @@ http://localhost:8080/examples/editor-mode/
 - Page object and image moves apply `transformPageObject()` translation matrices.
 - Page object and image resize also applies `transformPageObject()` with scale/translate matrices based on the dragged handle.
 - Object geometry edits apply `transformPageObject()` with a scale/translate matrix derived from the selected object's current PDF-space rectangle and the requested X/Y/width/height.
+- Text object edits infer current text from overlapping text runs, delete the selected text page object, and insert a replacement text box at the same bounds.
 - Annotation moves update annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation resize updates annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation property edits call `updateAnnotation()` with `rect`, `rgba`, `borderWidth`, `contents`, and `uri` as applicable.
+- Annotation creation uses direct API helpers for highlight, rectangle, text note, FreeText, and link annotations. New annotations are selected after page refresh when possible.
 - Drag-to-move starts in Object mode on page objects/images or in Annotation mode on annotations. Dragging empty space still performs area selection.
 - Shift-drag axis locking and snap guides only apply to direct canvas movement for selected page objects/images/annotations.
 - Snap guides use a small PDF-space threshold and snap selected bounds against page margins, page center lines, and nearby selectable item bounds.
@@ -72,6 +78,8 @@ http://localhost:8080/examples/editor-mode/
 - The floating toolbar uses the same move delta inputs as the Move Items panel. Its grow/shrink actions resize one selected page object, image, or annotation around its center.
 - Undo/redo uses bounded full-PDF byte snapshots, which is simple and reliable but not memory optimal for large PDFs.
 - Text copy reconstructs selected ranges from `pageText()` character indexes instead of concatenating visible text-run boxes, so hidden spaces and punctuation placement are preserved.
+- Text-mode rectangle drags still select text when the rectangle intersects text runs. Empty rectangle drags update the Add Text X/Y/width/height inputs instead.
+- Multi-select inspection summarizes selected pages, counts by selectable kind, aggregate bounds, and currently available actions before listing individual items.
 
 ## Completed Editor Actions
 
@@ -80,12 +88,20 @@ http://localhost:8080/examples/editor-mode/
 - Improve text selection into continuous line/range selection instead of separate run boxes.
 - Copy selected text with a button and keyboard shortcut.
 - Add click-to-place text insertion so Text mode can set the add-text coordinates from the canvas.
+- Add drag-to-place text insertion so Text mode can set the add-text rectangle from the canvas.
 - Add an editable inspector for annotation text, URI, color, border width, and rectangle values.
 - Add numeric inspector controls for selected object/image position and size.
 - Add a floating selection toolbar with delete, move, resize, and edit actions near the selected item.
 - Add Shift-constrained movement and optional snap guides for margins, page center, and nearby objects.
 - Add duplicate support for selected text page objects.
+- Add per-handle resize cursors for annotations and page objects.
+- Add selection grouping and a multi-select inspector with bounds, counts, and available actions.
+- Add inline text object replacement for content, font, size, and color.
+- Add annotation creation from the editor toolbar.
 
 ## Next Actions
 
+- Add image placement mode with upload, click placement, and drag rectangle placement.
+- Add keyboard nudge variants: Arrow = 1 pt, Shift+Arrow = 10 pt, Alt/Option+Arrow = 0.25 pt.
+- Add visible mouse PDF coordinates and selected bounds while moving/resizing.
 - Replace full-PDF snapshot undo with operation-based undo once editor mutations become more granular.
