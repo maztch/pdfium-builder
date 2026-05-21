@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDFium WASM Forms Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #132018;
+        --muted: #667085;
+        --line: #d8deea;
+        --panel: rgba(255, 255, 255, 0.86);
+        --accent: #166534;
+        --accent-soft: rgba(22, 101, 52, 0.16);
+        --active: rgba(234, 179, 8, 0.32);
+        --ok: #047857;
+        --danger: #b42318;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; color: var(--ink); font-family: ui-serif, Georgia, "Times New Roman", serif; background: radial-gradient(circle at 10% 8%, rgba(22, 101, 52, 0.18), transparent 30rem), radial-gradient(circle at 92% 18%, rgba(234, 179, 8, 0.18), transparent 26rem), linear-gradient(135deg, #f0fdf4 0%, #fffbeb 100%); }
+      .shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+      header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(12px); }
+      h1, h2, h3 { margin: 0; letter-spacing: -0.03em; }
+      h1 { font-size: clamp(1.25rem, 2vw, 1.9rem); }
+      h2 { margin-bottom: 0.75rem; font-size: 1rem; }
+      h3 { margin: 1rem 0 0.45rem; font: 700 0.78rem ui-sans-serif, system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+      .status { min-height: 1.5rem; margin-top: 0.35rem; color: var(--muted); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .status.error { color: var(--danger); }
+      .controls, .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+      .controls { justify-content: flex-end; }
+      input, select, textarea, button { font: 0.88rem ui-sans-serif, system-ui, sans-serif; }
+      input[type="file"] { max-width: 16rem; }
+      input[type="text"], select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 0.65rem; padding: 0.55rem 0.65rem; color: var(--ink); background: white; }
+      textarea { min-height: 4.5rem; resize: vertical; }
+      label { display: grid; gap: 0.25rem; color: var(--muted); font: 0.82rem ui-sans-serif, system-ui, sans-serif; }
+      button { border: 1px solid var(--line); border-radius: 999px; padding: 0.55rem 0.8rem; color: var(--ink); background: white; font-weight: 700; cursor: pointer; }
+      button.primary { border-color: var(--accent); color: white; background: var(--accent); }
+      button.save { border-color: var(--ok); color: white; background: var(--ok); }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { cursor: not-allowed; opacity: 0.45; }
+      main { display: grid; grid-template-columns: minmax(25rem, 36rem) minmax(0, 1fr); min-height: 0; }
+      aside { min-height: 0; overflow: auto; padding: 1rem; border-right: 1px solid var(--line); background: var(--panel); }
+      .panel { margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255, 255, 255, 0.82); box-shadow: 0 18px 50px rgba(19, 32, 24, 0.08); }
+      .metric { display: flex; justify-content: space-between; gap: 1rem; padding: 0.45rem 0; border-bottom: 1px solid var(--line); font: 0.9rem ui-sans-serif, system-ui, sans-serif; }
+      .metric:last-child { border-bottom: 0; }
+      .metric span:first-child { color: var(--muted); }
+      .field-list, .widget-list, .option-list { display: grid; gap: 0.45rem; max-height: 21rem; overflow: auto; }
+      .field-button, .widget-card, .option-card { width: 100%; border-radius: 0.75rem; text-align: left; white-space: normal; }
+      .field-button.active { border-color: var(--accent); background: var(--accent-soft); }
+      .field-meta, .small { display: block; margin-top: 0.2rem; color: var(--muted); font: 0.78rem ui-sans-serif, system-ui, sans-serif; }
+      .form-grid { display: grid; gap: 0.7rem; }
+      .viewer { min-width: 0; min-height: 0; overflow: auto; padding: 2rem; }
+      .canvas-frame { display: grid; place-items: start center; min-height: 100%; }
+      .page-stack { position: relative; display: inline-block; }
+      canvas { display: block; max-width: none; border: 1px solid #cbd5e1; border-radius: 0.4rem; background: white; box-shadow: 0 24px 70px rgba(19, 32, 24, 0.22); }
+      .overlay { position: absolute; inset: 0; pointer-events: none; }
+      .widget-rect { position: absolute; border: 2px solid rgba(22, 101, 52, 0.9); background: var(--accent-soft); border-radius: 0.2rem; }
+      .widget-rect.active { border-color: #eab308; background: var(--active); box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.24); }
+      .empty { max-width: 38rem; margin: 8vh auto; padding: 2rem; border: 1px dashed var(--line); border-radius: 1rem; text-align: center; background: rgba(255, 255, 255, 0.72); }
+      @media (max-width: 980px) { header { flex-direction: column; } .controls { justify-content: flex-start; } main { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>PDFium WASM Forms Demo</h1>
+          <div class="status" id="status">Load a PDF to inspect AcroForm fields, edit supported values, preview widget geometry, and save.</div>
+        </div>
+        <div class="controls">
+          <input id="pdfInput" type="file" accept="application/pdf,.pdf">
+          <button id="prevButton" type="button" disabled>Previous</button>
+          <button id="nextButton" type="button" disabled>Next</button>
+          <button id="zoomOutButton" type="button" disabled>Zoom out</button>
+          <button id="zoomResetButton" type="button" disabled>100%</button>
+          <button id="zoomInButton" type="button" disabled>Zoom in</button>
+          <button id="saveButton" class="save" type="button" disabled>Save PDF</button>
+        </div>
+      </header>
+
+      <main>
+        <aside>
+          <section class="panel">
+            <h2>Document</h2>
+            <div class="metric"><span>File</span><strong id="fileName">None</strong></div>
+            <div class="metric"><span>Page</span><strong id="pageInfo">-</strong></div>
+            <div class="metric"><span>Page size</span><strong id="pageSize">-</strong></div>
+            <div class="metric"><span>Form fields</span><strong id="fieldCount">0</strong></div>
+            <div class="metric"><span>Zoom</span><strong id="zoomInfo">100%</strong></div>
+          </section>
+
+          <section class="panel">
+            <h2>Fields</h2>
+            <div id="fieldList" class="field-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Selected Field</h2>
+            <div class="metric"><span>Name</span><strong id="fieldName">-</strong></div>
+            <div class="metric"><span>Type</span><strong id="fieldType">-</strong></div>
+            <div class="metric"><span>Value</span><strong id="fieldValue">-</strong></div>
+            <div class="metric"><span>Default</span><strong id="fieldDefault">-</strong></div>
+            <div class="metric"><span>Flags</span><strong id="fieldFlags">-</strong></div>
+            <div class="metric"><span>Widgets</span><strong id="widgetCount">0</strong></div>
+            <div class="form-grid" id="fieldEditor" style="margin-top: 0.75rem;"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Widgets</h2>
+            <div id="widgetList" class="widget-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Choice Options</h2>
+            <div id="optionList" class="option-list"></div>
+          </section>
+        </aside>
+
+        <section class="viewer">
+          <div class="canvas-frame">
+            <div class="empty" id="emptyState">
+              <h2>No document loaded</h2>
+              <p>The demo PDF loads automatically. Use the file input to inspect another PDF with AcroForm fields.</p>
+            </div>
+            <div id="pageStack" class="page-stack" hidden>
+              <canvas id="pageCanvas"></canvas>
+              <div id="overlay" class="overlay"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module">
+      import { createPdfiumApi } from "../../pdfium-api.js";
+
+      const RENDER_ANNOTATIONS = 0x01;
+      const FIELD_TYPES = new Map([
+        [0, "Unknown"],
+        [1, "Push button"],
+        [2, "Check box"],
+        [3, "Radio button"],
+        [4, "Combo box"],
+        [5, "List box"],
+        [6, "Text field"],
+        [7, "Signature"],
+      ]);
+
+      const state = {
+        api: null,
+        doc: null,
+        fileName: "",
+        pageIndex: 0,
+        pageCount: 0,
+        pageSize: null,
+        renderSize: null,
+        zoom: 0.85,
+        rendering: false,
+        dirty: false,
+        fields: [],
+        selectedFieldName: "",
+      };
+
+      const elements = {
+        pdfInput: document.getElementById("pdfInput"),
+        prevButton: document.getElementById("prevButton"),
+        nextButton: document.getElementById("nextButton"),
+        zoomOutButton: document.getElementById("zoomOutButton"),
+        zoomResetButton: document.getElementById("zoomResetButton"),
+        zoomInButton: document.getElementById("zoomInButton"),
+        saveButton: document.getElementById("saveButton"),
+        status: document.getElementById("status"),
+        fileName: document.getElementById("fileName"),
+        pageInfo: document.getElementById("pageInfo"),
+        pageSize: document.getElementById("pageSize"),
+        fieldCount: document.getElementById("fieldCount"),
+        zoomInfo: document.getElementById("zoomInfo"),
+        fieldList: document.getElementById("fieldList"),
+        fieldName: document.getElementById("fieldName"),
+        fieldType: document.getElementById("fieldType"),
+        fieldValue: document.getElementById("fieldValue"),
+        fieldDefault: document.getElementById("fieldDefault"),
+        fieldFlags: document.getElementById("fieldFlags"),
+        widgetCount: document.getElementById("widgetCount"),
+        fieldEditor: document.getElementById("fieldEditor"),
+        widgetList: document.getElementById("widgetList"),
+        optionList: document.getElementById("optionList"),
+        emptyState: document.getElementById("emptyState"),
+        pageStack: document.getElementById("pageStack"),
+        canvas: document.getElementById("pageCanvas"),
+        overlay: document.getElementById("overlay"),
+      };
+
+      function setStatus(message, isError = false) {
+        elements.status.textContent = message;
+        elements.status.classList.toggle("error", isError);
+      }
+
+      function selectedField() {
+        return state.fields.find((field) => field.name === state.selectedFieldName) || null;
+      }
+
+      function updateControls() {
+        const hasDocument = Boolean(state.doc);
+        elements.prevButton.disabled = !hasDocument || state.rendering || state.pageIndex <= 0;
+        elements.nextButton.disabled = !hasDocument || state.rendering || state.pageIndex >= state.pageCount - 1;
+        elements.zoomOutButton.disabled = !hasDocument || state.rendering || state.zoom <= 0.35;
+        elements.zoomResetButton.disabled = !hasDocument || state.rendering || state.zoom === 0.85;
+        elements.zoomInButton.disabled = !hasDocument || state.rendering || state.zoom >= 3;
+        elements.saveButton.disabled = !hasDocument || state.rendering || !state.dirty;
+      }
+
+      function closeCurrentDocument() {
+        if (state.doc) state.doc.close();
+        state.doc = null;
+      }
+
+      async function getApi() {
+        if (!state.api) {
+          state.api = await createPdfiumApi({ locateFile: (file) => new URL(`../../dist/${file}`, import.meta.url).href });
+        }
+        return state.api;
+      }
+
+      function drawRgbaToCanvas(rgbaBytes, width, height) {
+        elements.canvas.width = width;
+        elements.canvas.height = height;
+        elements.canvas.style.width = `${width}px`;
+        elements.canvas.style.height = `${height}px`;
+        elements.overlay.style.width = `${width}px`;
+        elements.overlay.style.height = `${height}px`;
+        elements.canvas.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(rgbaBytes), width, height), 0, 0);
+      }
+
+      function pdfRectToCanvasRect(rect) {
+        const scaleX = state.renderSize.width / state.pageSize.width;
+        const scaleY = state.renderSize.height / state.pageSize.height;
+        return {
+          left: rect.left * scaleX,
+          top: (state.pageSize.height - rect.top) * scaleY,
+          width: (rect.right - rect.left) * scaleX,
+          height: (rect.top - rect.bottom) * scaleY,
+        };
+      }
+
+      function typeName(type) {
+        return FIELD_TYPES.get(type) || `Type ${type}`;
+      }
+
+      function refreshFields() {
+        if (!state.doc) {
+          state.fields = [];
+          state.selectedFieldName = "";
+        } else {
+          state.fields = state.doc.formFields();
+          if (!state.fields.some((field) => field.name === state.selectedFieldName)) {
+            state.selectedFieldName = state.fields[0]?.name || "";
+          }
+        }
+        renderFormsUi();
+      }
+
+      function renderFieldList() {
+        elements.fieldList.replaceChildren();
+        elements.fieldCount.textContent = String(state.fields.length);
+        if (state.fields.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = "No AcroForm fields found in this PDF.";
+          elements.fieldList.append(empty);
+          return;
+        }
+
+        for (const field of state.fields) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `field-button${field.name === state.selectedFieldName ? " active" : ""}`;
+          button.append(document.createTextNode(field.name || "Unnamed field"));
+          const meta = document.createElement("span");
+          meta.className = "field-meta";
+          meta.textContent = `${typeName(field.type)} · widgets ${field.widgets.length} · value ${field.value || "(empty)"}`;
+          button.append(meta);
+          button.addEventListener("click", async () => {
+            state.selectedFieldName = field.name;
+            const firstWidget = field.widgets.find((widget) => widget.pageIndex >= 0);
+            if (firstWidget && firstWidget.pageIndex !== state.pageIndex) {
+              state.pageIndex = firstWidget.pageIndex;
+              await renderCurrentPage();
+            } else {
+              renderFormsUi();
+            }
+            setStatus(`Selected ${field.name || "field"}.`);
+          });
+          elements.fieldList.append(button);
+        }
+      }
+
+      function renderFieldEditor(field) {
+        elements.fieldEditor.replaceChildren();
+        if (!field) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = "Select a field to edit supported values.";
+          elements.fieldEditor.append(empty);
+          return;
+        }
+
+        if (field.type === 6) {
+          const label = document.createElement("label");
+          label.textContent = "Text value";
+          const textarea = document.createElement("textarea");
+          textarea.value = field.value;
+          label.append(textarea);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "primary";
+          button.textContent = "Apply text value";
+          button.addEventListener("click", async () => applyTextValue(field.name, textarea.value));
+          elements.fieldEditor.append(label, button);
+          return;
+        }
+
+        if (field.type === 4 || field.type === 5) {
+          const label = document.createElement("label");
+          label.textContent = field.type === 4 ? "Combo option" : "List option";
+          const select = document.createElement("select");
+          for (const option of field.options) {
+            const item = document.createElement("option");
+            item.value = String(option.index);
+            item.textContent = `${option.label || option.value || `Option ${option.index}`} (${option.index})`;
+            item.selected = field.selectedIndexes.includes(option.index) || option.selected;
+            select.append(item);
+          }
+          label.append(select);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "primary";
+          button.textContent = "Apply selected option";
+          button.disabled = field.options.length === 0;
+          button.addEventListener("click", async () => applyChoiceValue(field.name, Number(select.value)));
+          elements.fieldEditor.append(label, button);
+          return;
+        }
+
+        if (field.type === 2 || field.type === 3) {
+          const note = document.createElement("p");
+          note.className = "status";
+          note.textContent = field.type === 2
+            ? "Use the widget controls below to toggle checkbox state."
+            : "Use the widget controls below to select the radio button widget.";
+          elements.fieldEditor.append(note);
+          return;
+        }
+
+        const unsupported = document.createElement("p");
+        unsupported.className = "status";
+        unsupported.textContent = "This field type is read-only in this demo.";
+        elements.fieldEditor.append(unsupported);
+      }
+
+      function renderFieldDetails() {
+        const field = selectedField();
+        elements.fieldName.textContent = field?.name || "-";
+        elements.fieldType.textContent = field ? typeName(field.type) : "-";
+        elements.fieldValue.textContent = field ? field.value || "(empty)" : "-";
+        elements.fieldDefault.textContent = field ? field.defaultValue || "(empty)" : "-";
+        elements.fieldFlags.textContent = field ? `0x${field.flags.toString(16)}` : "-";
+        elements.widgetCount.textContent = String(field?.widgets.length || 0);
+        renderFieldEditor(field);
+      }
+
+      function renderWidgets() {
+        const field = selectedField();
+        elements.widgetList.replaceChildren();
+        if (!field || field.widgets.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = "No widgets for the selected field.";
+          elements.widgetList.append(empty);
+          return;
+        }
+
+        for (const widget of field.widgets) {
+          const card = document.createElement("div");
+          card.className = "widget-card";
+          const rect = widget.rect;
+          const title = document.createElement("h3");
+          title.textContent = `Widget ${widget.index}`;
+          const geometry = document.createElement("span");
+          geometry.className = "small";
+          geometry.textContent = `Page ${widget.pageIndex >= 0 ? widget.pageIndex + 1 : "?"} · ${rect.left.toFixed(1)}, ${rect.bottom.toFixed(1)}, ${rect.right.toFixed(1)}, ${rect.top.toFixed(1)}`;
+          const stateLine = document.createElement("span");
+          stateLine.className = "small";
+          stateLine.textContent = `checked ${widget.checked ? "yes" : "no"} · appearance ${widget.hasAppearance ? "yes" : "no"} · on-state ${widget.onStateName || "-"}`;
+          card.append(title, geometry, stateLine);
+
+          const row = document.createElement("div");
+          row.className = "button-row";
+          row.style.marginTop = "0.5rem";
+          const jump = document.createElement("button");
+          jump.type = "button";
+          jump.textContent = "Show page";
+          jump.disabled = widget.pageIndex < 0;
+          jump.addEventListener("click", async () => {
+            state.pageIndex = widget.pageIndex;
+            await renderCurrentPage();
+          });
+          row.append(jump);
+
+          if (field.type === 2) {
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "primary";
+            toggle.textContent = widget.checked ? "Uncheck" : "Check";
+            toggle.addEventListener("click", async () => applyCheckedValue(field.name, widget.index, !widget.checked));
+            row.append(toggle);
+          } else if (field.type === 3) {
+            const select = document.createElement("button");
+            select.type = "button";
+            select.className = "primary";
+            select.textContent = widget.checked ? "Selected" : "Select radio";
+            select.disabled = widget.checked;
+            select.addEventListener("click", async () => applyCheckedValue(field.name, widget.index, true));
+            row.append(select);
+          }
+
+          card.append(row);
+          elements.widgetList.append(card);
+        }
+      }
+
+      function renderOptions() {
+        const field = selectedField();
+        elements.optionList.replaceChildren();
+        if (!field || field.options.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "status";
+          empty.textContent = "No choice options for the selected field.";
+          elements.optionList.append(empty);
+          return;
+        }
+
+        for (const option of field.options) {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "option-card";
+          card.textContent = `${option.index}: ${option.label || option.value || "Untitled option"}${option.selected ? " · selected" : ""}`;
+          card.disabled = !(field.type === 4 || field.type === 5);
+          card.addEventListener("click", async () => applyChoiceValue(field.name, option.index));
+          elements.optionList.append(card);
+        }
+      }
+
+      function renderWidgetOverlays() {
+        elements.overlay.replaceChildren();
+        if (!state.pageSize || !state.renderSize) return;
+        const active = selectedField();
+        for (const field of state.fields) {
+          for (const widget of field.widgets) {
+            if (widget.pageIndex !== state.pageIndex) continue;
+            const canvasRect = pdfRectToCanvasRect(widget.rect);
+            const node = document.createElement("div");
+            node.className = `widget-rect${active && active.name === field.name ? " active" : ""}`;
+            node.style.left = `${canvasRect.left}px`;
+            node.style.top = `${canvasRect.top}px`;
+            node.style.width = `${Math.max(1, canvasRect.width)}px`;
+            node.style.height = `${Math.max(1, canvasRect.height)}px`;
+            elements.overlay.append(node);
+          }
+        }
+      }
+
+      function renderFormsUi() {
+        renderFieldList();
+        renderFieldDetails();
+        renderWidgets();
+        renderOptions();
+        renderWidgetOverlays();
+        updateControls();
+      }
+
+      async function renderCurrentPage() {
+        if (!state.doc || state.rendering) return;
+        state.rendering = true;
+        updateControls();
+        try {
+          state.pageCount = state.doc.pageCount();
+          state.pageSize = state.doc.pageSize(state.pageIndex);
+          const width = Math.max(1, Math.round(state.pageSize.width * state.zoom));
+          const height = Math.max(1, Math.round(state.pageSize.height * state.zoom));
+          state.renderSize = { width, height };
+          const rendered = state.doc.renderPage({ pageIndex: state.pageIndex, width, height, flags: RENDER_ANNOTATIONS });
+          drawRgbaToCanvas(rendered.rgbaBytes, width, height);
+          elements.emptyState.hidden = true;
+          elements.pageStack.hidden = false;
+          elements.fileName.textContent = state.fileName || "Loaded PDF";
+          elements.pageInfo.textContent = `${state.pageIndex + 1} / ${state.pageCount}`;
+          elements.pageSize.textContent = `${state.pageSize.width.toFixed(1)} x ${state.pageSize.height.toFixed(1)} pt`;
+          elements.zoomInfo.textContent = `${Math.round(state.zoom * 100)}%`;
+          renderFormsUi();
+          setStatus("Rendered forms demo.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to render PDF.", true);
+        } finally {
+          state.rendering = false;
+          updateControls();
+        }
+      }
+
+      async function reloadAfterMutation(message) {
+        state.dirty = true;
+        refreshFields();
+        await renderCurrentPage();
+        setStatus(`${message} Save the PDF to persist changes.`);
+      }
+
+      async function applyTextValue(name, value) {
+        try {
+          state.doc.setFormFieldValue(name, value);
+          await reloadAfterMutation("Updated text field.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to update text field.", true);
+        }
+      }
+
+      async function applyCheckedValue(name, controlIndex, checked) {
+        try {
+          state.doc.setFormFieldChecked(name, checked, controlIndex);
+          await reloadAfterMutation("Updated checkbox/radio state.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to update checked state.", true);
+        }
+      }
+
+      async function applyChoiceValue(name, optionIndex) {
+        try {
+          state.doc.setFormFieldSelectedIndex(name, optionIndex);
+          await reloadAfterMutation("Updated selected option.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to update selected option.", true);
+        }
+      }
+
+      async function loadPdf(file) {
+        closeCurrentDocument();
+        state.fileName = file.name;
+        state.pageIndex = 0;
+        state.pageCount = 0;
+        state.pageSize = null;
+        state.renderSize = null;
+        state.zoom = 0.85;
+        state.dirty = false;
+        state.fields = [];
+        state.selectedFieldName = "";
+        elements.pageStack.hidden = true;
+        elements.emptyState.hidden = false;
+        renderFormsUi();
+        setStatus("Opening PDF...");
+        try {
+          const api = await getApi();
+          state.doc = api.openDocument(new Uint8Array(await file.arrayBuffer()));
+          refreshFields();
+          await renderCurrentPage();
+        } catch (error) {
+          closeCurrentDocument();
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to open PDF.", true);
+        }
+      }
+
+      async function loadDemoPdf() {
+        try {
+          setStatus("Loading demo.pdf...");
+          const response = await fetch("../demo.pdf");
+          if (!response.ok) throw new Error(`Unable to fetch demo.pdf (${response.status})`);
+          const blob = await response.blob();
+          await loadPdf(new File([blob], "demo.pdf", { type: "application/pdf" }));
+        } catch (error) {
+          console.warn(error);
+          setStatus("Demo PDF could not be loaded. Choose a PDF file manually.", true);
+        }
+      }
+
+      function savePdf() {
+        try {
+          const output = state.doc.save();
+          const base = state.fileName.replace(/\.pdf$/i, "") || "forms";
+          const blob = new Blob([output], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `${base}-forms.pdf`;
+          link.click();
+          URL.revokeObjectURL(url);
+          state.dirty = false;
+          updateControls();
+          setStatus("Saved modified PDF.");
+        } catch (error) {
+          console.error(error);
+          setStatus(error instanceof Error ? error.message : "Unable to save PDF.", true);
+        }
+      }
+
+      elements.pdfInput.addEventListener("change", async () => {
+        const [file] = elements.pdfInput.files;
+        if (file) await loadPdf(file);
+      });
+      elements.prevButton.addEventListener("click", async () => {
+        if (state.pageIndex > 0) {
+          state.pageIndex -= 1;
+          await renderCurrentPage();
+        }
+      });
+      elements.nextButton.addEventListener("click", async () => {
+        if (state.pageIndex < state.pageCount - 1) {
+          state.pageIndex += 1;
+          await renderCurrentPage();
+        }
+      });
+      elements.zoomOutButton.addEventListener("click", async () => {
+        state.zoom = Math.max(0.25, Number((state.zoom - 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+      elements.zoomResetButton.addEventListener("click", async () => {
+        state.zoom = 0.85;
+        await renderCurrentPage();
+      });
+      elements.zoomInButton.addEventListener("click", async () => {
+        state.zoom = Math.min(3, Number((state.zoom + 0.25).toFixed(2)));
+        await renderCurrentPage();
+      });
+      elements.saveButton.addEventListener("click", savePdf);
+      window.addEventListener("beforeunload", () => {
+        closeCurrentDocument();
+        if (state.api) state.api.destroy();
+      });
+      renderFormsUi();
+      updateControls();
+      loadDemoPdf();
+    </script>
+  </body>
+</html>

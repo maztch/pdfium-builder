@@ -29,6 +29,7 @@ Standalone browser samples preload [`demo.pdf`](demo.pdf) on startup. Use the PD
 | [`metadata-outline/`](metadata-outline/) | Browser page | Views/edits metadata, lists outline/bookmarks, navigates destinations, and saves changes. | `http://localhost:8080/examples/metadata-outline/` |
 | [`attachments-panel/`](attachments-panel/) | Browser page | Lists, downloads, adds, replaces, deletes, renders, and saves embedded attachments. | `http://localhost:8080/examples/attachments-panel/` |
 | [`redaction-demo/`](redaction-demo/) | Browser page | Searches text, previews redaction bounds, applies object-level redaction, renders, and saves changes. | `http://localhost:8080/examples/redaction-demo/` |
+| [`forms-demo/`](forms-demo/) | Browser page | Lists AcroForm fields/widgets/options, overlays widget bounds, edits supported values, and saves changes. | `http://localhost:8080/examples/forms-demo/` |
 | [`browser-add-text/`](browser-add-text/) | Browser module helper | Exports `addTextToPdf(inputBytes, text)` for adding text to page 1 and returning saved PDF bytes. | Import `examples/browser-add-text/index.js` from a browser page or bundler entry. |
 
 ## Requirements

@@ -113,6 +113,7 @@ Standalone viewer samples preload `examples/demo.pdf` on startup and keep their 
 - Toggle checkbox/radio state.
 - Select combo/list options.
 - Show widget geometry and appearance state.
+- Initial sample: [`examples/forms-demo/`](../examples/forms-demo/).
 
 ## 14) Redaction Demo
 
