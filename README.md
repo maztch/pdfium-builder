@@ -33,12 +33,36 @@ Build PDFium to WebAssembly, expose a custom C/C++ wrapper API, and call it from
 npm run smoke
 ```
 
-Required tools:
+## Requirements
 
-- `git`
-- `python3`
-- `ninja`
-- Emscripten tools: `emcc`, `em++`
+Required command-line tools:
+
+- `git`: fetches `depot_tools` and PDFium sources.
+- `python3`: used by the build scripts and PDFium tooling.
+- `ninja`: builds PDFium.
+- Emscripten tools: `emcc`, `em++`.
+- `xxd`: generates the embedded fallback-font header used by the wrapper build.
+- `node` and `npm`: run smoke tests and serve browser examples.
+
+On macOS with Homebrew:
+
+```bash
+brew install emscripten ninja python node vim
+```
+
+`vim` is included because Homebrew provides `xxd` through that package on systems where it is not already available.
+
+Verify the main tools are available:
+
+```bash
+emcc --version
+em++ --version
+ninja --version
+python3 --version
+node --version
+npm --version
+xxd -h
+```
 
 ## Documentation
 
