@@ -510,9 +510,11 @@ async function main() {
         'direct API duplicatePageObject should apply the requested offset'
       );
       const objectCountBeforeReplace = doc.pageObjectCount(0);
-      doc.replaceTextPageObject(0, duplicateIndex, 'Direct replacement text');
-      assert.equal(doc.pageObjectCount(0), objectCountBeforeReplace, 'direct API replaceTextPageObject should preserve object count');
+      doc.replaceTextPageObject(0, duplicateIndex, 'Direct replacement text\nSecond replacement line é');
+      assert.equal(doc.pageObjectCount(0), objectCountBeforeReplace + 1, 'direct API replaceTextPageObject should create one object per non-empty line');
       assert.match(doc.pageText(0), /Direct replacement text/, 'direct API replaceTextPageObject should update page text');
+      assert.match(doc.pageText(0), /Second replacement line/, 'direct API replaceTextPageObject should insert newline text as a separate line object');
+      assert.match(doc.pageText(0), /é/, 'direct API replaceTextPageObject should preserve fallback-font unicode text extraction');
       assert.throws(
         () => doc.duplicatePageObject(0, imageObject.index),
         (error) => error instanceof PdfiumApiError && error.code === 63,

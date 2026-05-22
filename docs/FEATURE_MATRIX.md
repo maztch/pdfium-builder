@@ -74,7 +74,7 @@ Status legend:
 | Delete page object | `wasm_pdf_delete_page_object` | `deletePageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct and worker APIs regenerate page content after deletion. |
 | Transform page object | `wasm_pdf_transform_page_object` | `transformPageObject` | Yes | [API](API.md#page-content-objects), [Worker](WORKER.md#message-protocol) | Stable | Direct API accepts object or array affine matrices; matrix must be invertible. |
 | Duplicate text page object | `wasm_pdf_duplicate_page_object` | No | Yes | [API](API.md#page-content-objects), [Editor example](../examples/editor-mode/) | Experimental | Uses PDFium internal text-object cloning; generic image/path/form object cloning is not exposed yet. |
-| Replace text page object | `wasm_pdf_replace_text_page_object` | No | Yes | [API](API.md#page-content-objects), [Editor example](../examples/editor-mode/) | Experimental | Replaces text while preserving the original PDF font handle, font size, and fill color. |
+| Replace text page object | `wasm_pdf_replace_text_page_object` | No | Yes | [API](API.md#page-content-objects), [Editor example](../examples/editor-mode/) | Experimental | Replaces text while preserving original style where safe. Non-ASCII or subset-font edits switch to bundled embedded TrueType fallback fonts. Newlines create same-style text line objects. |
 
 ## Annotations
 

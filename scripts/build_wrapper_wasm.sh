@@ -11,6 +11,10 @@ LIBPDFIUM_A="${PDFIUM_DIR}/out/wasm/obj/libpdfium.a"
 LIBZ_A="${PDFIUM_DIR}/out/wasm/obj/third_party/zlib/libchrome_zlib.a"
 WRAPPER_SRC="${ROOT_DIR}/wasm/pdfium_edit_wrapper.cc"
 PLATFORM_STUB_SRC="${ROOT_DIR}/wasm/pdfium_wasm_platform_stub.cc"
+EMBEDDED_FONTS_HEADER="${DIST_DIR}/embedded_fonts.generated.h"
+FALLBACK_SANS_FONT="${PDFIUM_DIR}/third_party/skia/resources/fonts/Roboto-Regular.ttf"
+FALLBACK_SERIF_FONT="${PDFIUM_DIR}/third_party/skia/modules/canvaskit/tests/assets/NotoSerif-Regular.ttf"
+FALLBACK_MONO_FONT="${PDFIUM_DIR}/third_party/skia/modules/canvaskit/fonts/NotoMono-Regular.ttf"
 
 if [[ ! -f "${LIBPDFIUM_A}" ]]; then
   echo "Missing ${LIBPDFIUM_A}. Run scripts/build_pdfium_wasm.sh first."
@@ -24,9 +28,18 @@ fi
 
 mkdir -p "${DIST_DIR}"
 
+{
+  echo "#pragma once"
+  xxd -i -n pdfium_wasm_fallback_sans_ttf "${FALLBACK_SANS_FONT}"
+  xxd -i -n pdfium_wasm_fallback_serif_ttf "${FALLBACK_SERIF_FONT}"
+  xxd -i -n pdfium_wasm_fallback_mono_ttf "${FALLBACK_MONO_FONT}"
+} > "${EMBEDDED_FONTS_HEADER}"
+
 em++ \
   -O3 \
   -std=c++20 \
+  -DPDFIUM_WASM_HAS_EMBEDDED_FONTS=1 \
+  -I"${DIST_DIR}" \
   -I"${PDFIUM_DIR}" \
   -I"${PDFIUM_DIR}/public" \
   -I"${PDFIUM_DIR}/third_party/freetype/include" \

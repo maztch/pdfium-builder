@@ -1,6 +1,9 @@
 # Editor Mode Sample
 
-Sample file: [`index.html`](index.html)
+Sample files:
+
+- [`index.html`](index.html) for markup and styles.
+- [`main.js`](main.js) for editor behavior.
 
 ## Purpose
 
@@ -13,6 +16,7 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Renders the current page with previous/next navigation.
 - Uses the shared editor selection model and overlay renderer.
 - Supports Pan, Text, Object, Annotation, Form, and Area selection modes.
+- Starts in Object mode so page objects and images are immediately selectable.
 - Click-selects or rubber-band selects normalized selectable items from `getSelectableItems()`.
 - Shows an I-beam cursor in Text mode and renders selected text as square translucent highlight areas.
 - Groups Text-mode drag selections into continuous line/range highlights instead of separate run boxes.
@@ -23,6 +27,7 @@ This sample focuses on edit mode only. It preloads `../demo.pdf`, renders one pa
 - Replaces selected text page objects with edited content while preserving original font and size when the native replacement API is available.
 - Edits text in place by double-clicking text page objects, text runs that resolve to page objects, or FreeText annotations.
 - Grows the in-place text editor with typed content instead of showing internal scrollbars.
+- Commits Enter/newline characters as additional same-style PDF text line objects where supported by the native replacement API.
 - Shows an accessible icon-only floating selection toolbar near the selected item with copy, delete, move, resize, and edit-focus actions.
 - Edits selected page object/image X, Y, width, and height from the object geometry panel.
 - Edits selected annotation rectangle, color, border width, text, and URI from the annotation editor panel.
@@ -65,13 +70,15 @@ http://localhost:8080/examples/editor-mode/
 
 - Do not open the file directly with `file://`; browser module and WASM loading rules usually block that.
 - The selected PDF stays local in the browser.
+- The sample keeps editor behavior in `main.js` instead of an inline script so selection, mutation, and event wiring are easier to scan.
 - This sample intentionally avoids document metadata, page geometry, attachments, forms editing panels, and other full-workbench tabs.
 - Page object and image moves apply `transformPageObject()` translation matrices.
 - Page object and image resize also applies `transformPageObject()` with scale/translate matrices based on the dragged handle.
 - Object geometry edits apply `transformPageObject()` with a scale/translate matrix derived from the selected object's current PDF-space rectangle and the requested X/Y/width/height.
-- Text object edits infer current text from overlapping text runs. Native replacement preserves the original PDF font handle and font size; older builds fall back to deleting the selected text page object and inserting a replacement text box at the same bounds.
+- Text object edits infer current text from overlapping text runs. Native replacement preserves the original PDF font handle and font size where safe; if broader glyph coverage is needed, replacement switches to a bundled embedded TrueType fallback font with a similar sans/serif/mono family. Newline characters create additional same-style text line objects. Older builds fall back to deleting the selected text page object and inserting a replacement text box at the same bounds.
 - In-place text edits use the same preservation path for text page objects. FreeText in-place edits update annotation contents through `updateAnnotation()`.
 - The in-place editor uses a `contenteditable` overlay so long edits expand naturally in width/height while preserving plain text on commit.
+- While in-place editing is active, arrow keys, Delete, and Backspace are owned by the text caret instead of the editor selection shortcuts.
 - Annotation moves update annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation resize updates annotation rectangles with `updateAnnotation(..., { rect })`.
 - Annotation property edits call `updateAnnotation()` with `rect`, `rgba`, `borderWidth`, `contents`, and `uri` as applicable.

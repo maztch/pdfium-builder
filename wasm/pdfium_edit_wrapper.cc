@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -43,6 +44,10 @@
 #include "public/fpdf_transformpage.h"
 #include "public/fpdfview.h"
 #include "third_party/zlib/zlib.h"
+
+#if defined(PDFIUM_WASM_HAS_EMBEDDED_FONTS)
+#include "embedded_fonts.generated.h"
+#endif
 
 namespace {
 
@@ -513,6 +518,140 @@ std::vector<uint8_t> WideStringToUtf8Bytes(const WideString& value) {
 std::vector<uint8_t> ByteStringToBytes(const ByteString& value) {
   const auto* data = reinterpret_cast<const uint8_t*>(value.c_str());
   return std::vector<uint8_t>(data, data + value.GetLength());
+}
+
+bool IsUtf16LineBreak(char16_t value);
+
+std::string ToLowerAscii(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::tolower(ch));
+  });
+  return value;
+}
+
+bool IsPdfSubsetFontName(const std::string& name) {
+  if (name.size() <= 7 || name[6] != '+') return false;
+  for (size_t i = 0; i < 6; ++i) {
+    if (name[i] < 'A' || name[i] > 'Z') return false;
+  }
+  return true;
+}
+
+std::string StripPdfSubsetPrefix(std::string name) {
+  return IsPdfSubsetFontName(name) ? name.substr(7) : name;
+}
+
+std::string GetBaseFontName(FPDF_FONT font) {
+  if (!font) return std::string();
+  const size_t required = FPDFFont_GetBaseFontName(font, nullptr, 0);
+  if (required == 0) return std::string();
+  std::vector<char> buffer(required);
+  const size_t written = FPDFFont_GetBaseFontName(font, buffer.data(), buffer.size());
+  if (written == 0) return std::string();
+  return std::string(buffer.data());
+}
+
+enum class FallbackFontKind {
+  kNone,
+  kSans,
+  kSerif,
+  kMono,
+};
+
+FallbackFontKind SimilarFallbackFontKind(const std::string& original_name) {
+  const std::string lower = ToLowerAscii(StripPdfSubsetPrefix(original_name));
+  if (lower.find("courier") != std::string::npos ||
+      lower.find("mono") != std::string::npos) {
+    return FallbackFontKind::kMono;
+  }
+
+  if (lower.find("times") != std::string::npos ||
+      lower.find("serif") != std::string::npos ||
+      lower.find("roman") != std::string::npos) {
+    return FallbackFontKind::kSerif;
+  }
+
+  return FallbackFontKind::kSans;
+}
+
+std::u16string GetTextObjectUtf16(FPDF_PAGEOBJECT object, FPDF_TEXTPAGE text_page) {
+  if (!object || !text_page) return std::u16string();
+  const unsigned long required = FPDFTextObj_GetText(object, text_page, nullptr, 0);
+  if (required <= 2) return std::u16string();
+  std::vector<unsigned short> buffer((required + 1) / 2);
+  const unsigned long written =
+      FPDFTextObj_GetText(object,
+                          text_page,
+                          buffer.data(),
+                          required);
+  if (written == 0) return std::u16string();
+  const size_t code_unit_count = static_cast<size_t>(written / 2) -
+                                 (buffer[static_cast<size_t>(written / 2) - 1] == 0 ? 1 : 0);
+  std::u16string text;
+  text.reserve(code_unit_count);
+  for (size_t i = 0; i < code_unit_count; ++i) {
+    text.push_back(static_cast<char16_t>(buffer[i]));
+  }
+  return text;
+}
+
+bool ReplacementIntroducesNewSubsetCharacters(const std::u16string& original,
+                                              const std::u16string& replacement) {
+  std::unordered_set<char16_t> original_units(original.begin(), original.end());
+  for (char16_t value : replacement) {
+    if (IsUtf16LineBreak(value)) continue;
+    if (!original_units.count(value)) return true;
+  }
+  return false;
+}
+
+bool ReplacementContainsNonAsciiText(const std::u16string& replacement) {
+  return std::any_of(replacement.begin(), replacement.end(), [](char16_t value) {
+    return !IsUtf16LineBreak(value) && value > 0x7E;
+  });
+}
+
+FPDF_FONT LoadEmbeddedFallbackFont(FPDF_DOCUMENT doc, FallbackFontKind kind) {
+#if defined(PDFIUM_WASM_HAS_EMBEDDED_FONTS)
+  const unsigned char* data = nullptr;
+  uint32_t size = 0;
+  switch (kind) {
+    case FallbackFontKind::kSerif:
+      data = pdfium_wasm_fallback_serif_ttf;
+      size = pdfium_wasm_fallback_serif_ttf_len;
+      break;
+    case FallbackFontKind::kMono:
+      data = pdfium_wasm_fallback_mono_ttf;
+      size = pdfium_wasm_fallback_mono_ttf_len;
+      break;
+    case FallbackFontKind::kSans:
+      data = pdfium_wasm_fallback_sans_ttf;
+      size = pdfium_wasm_fallback_sans_ttf_len;
+      break;
+    case FallbackFontKind::kNone:
+      return nullptr;
+  }
+  if (!data || size == 0) return nullptr;
+  return FPDFText_LoadFont(doc, data, size, FPDF_FONT_TRUETYPE, true);
+#else
+  (void)doc;
+  (void)kind;
+  return nullptr;
+#endif
+}
+
+FPDF_PAGEOBJECT CreateReplacementTextObject(FPDF_DOCUMENT doc,
+                                            FPDF_FONT original_font,
+                                            FPDF_FONT fallback_font,
+                                            float font_size,
+                                            const char* standard_fallback_name) {
+  if (fallback_font) {
+    return FPDFPageObj_CreateTextObj(doc, fallback_font, font_size);
+  }
+  if (standard_fallback_name && standard_fallback_name[0]) {
+    return FPDFPageObj_NewTextObj(doc, standard_fallback_name, font_size);
+  }
+  return FPDFPageObj_CreateTextObj(doc, original_font, font_size);
 }
 
 bool DecodeUtf8CStringToWideString(const char* value, WideString* output) {
@@ -3834,6 +3973,28 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
   unsigned int a = 255;
   FPDFPageObj_GetFillColor(object, &r, &g, &b, &a);
 
+  const std::string base_font_name = GetBaseFontName(font);
+  FallbackFontKind fallback_font_kind = FallbackFontKind::kNone;
+  if (ReplacementContainsNonAsciiText(utf16)) {
+    fallback_font_kind = SimilarFallbackFontKind(base_font_name);
+  } else if (IsPdfSubsetFontName(base_font_name)) {
+    FPDF_TEXTPAGE text_page = FPDFText_LoadPage(page);
+    const std::u16string original_text = GetTextObjectUtf16(object, text_page);
+    if (text_page) FPDFText_ClosePage(text_page);
+    if (original_text.empty() ||
+        ReplacementIntroducesNewSubsetCharacters(original_text, utf16)) {
+      fallback_font_kind = SimilarFallbackFontKind(base_font_name);
+    }
+  }
+  FPDF_FONT fallback_font = LoadEmbeddedFallbackFont(doc, fallback_font_kind);
+  const char* standard_fallback_name = nullptr;
+  if (fallback_font_kind != FallbackFontKind::kNone && !fallback_font) {
+    standard_fallback_name = fallback_font_kind == FallbackFontKind::kSerif
+                                 ? "Times-Roman"
+                                 : fallback_font_kind == FallbackFontKind::kMono ? "Courier"
+                                                                                 : "Helvetica";
+  }
+
   std::vector<std::u16string> lines;
   std::u16string current_line;
   for (size_t i = 0; i < utf16.size(); ++i) {
@@ -3861,8 +4022,10 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
     }
 
     FPDF_PAGEOBJECT replacement =
-        FPDFPageObj_CreateTextObj(doc, font, font_size);
+        CreateReplacementTextObject(
+            doc, font, fallback_font, font_size, standard_fallback_name);
     if (!replacement) {
+      if (fallback_font) FPDFFont_Close(fallback_font);
       FPDF_ClosePage(page);
       SetLastError(WASM_PDF_ERROR_CREATE_TEXT_FAILED);
       return 0;
@@ -3871,6 +4034,7 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
     if (!FPDFText_SetText(
             replacement, reinterpret_cast<const unsigned short*>(line.c_str()))) {
       FPDFPageObj_Destroy(replacement);
+      if (fallback_font) FPDFFont_Close(fallback_font);
       FPDF_ClosePage(page);
       SetLastError(WASM_PDF_ERROR_SET_TEXT_FAILED);
       return 0;
@@ -3878,6 +4042,7 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
 
     if (!FPDFPageObj_SetFillColor(replacement, r, g, b, a)) {
       FPDFPageObj_Destroy(replacement);
+      if (fallback_font) FPDFFont_Close(fallback_font);
       FPDF_ClosePage(page);
       SetLastError(WASM_PDF_ERROR_SET_COLOR_FAILED);
       return 0;
@@ -3893,6 +4058,7 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
 
     if (!FPDFPage_InsertObject(page, replacement)) {
       FPDFPageObj_Destroy(replacement);
+      if (fallback_font) FPDFFont_Close(fallback_font);
       FPDF_ClosePage(page);
       SetLastError(WASM_PDF_ERROR_INSERT_OBJECT_FAILED);
       return 0;
@@ -3901,12 +4067,14 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
   }
 
   if (inserted_count == 0) {
+    if (fallback_font) FPDFFont_Close(fallback_font);
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_INVALID_ARGUMENT);
     return 0;
   }
 
   if (!FPDFPage_RemoveObject(page, object)) {
+    if (fallback_font) FPDFFont_Close(fallback_font);
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_PAGE_OBJECT_DELETE_FAILED);
     return 0;
@@ -3914,11 +4082,13 @@ int wasm_pdf_replace_text_page_object(uintptr_t handle,
   FPDFPageObj_Destroy(object);
 
   if (!FPDFPage_GenerateContent(page)) {
+    if (fallback_font) FPDFFont_Close(fallback_font);
     FPDF_ClosePage(page);
     SetLastError(WASM_PDF_ERROR_GENERATE_CONTENT_FAILED);
     return 0;
   }
 
+  if (fallback_font) FPDFFont_Close(fallback_font);
   FPDF_ClosePage(page);
   ClearLastError();
   return 1;

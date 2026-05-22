@@ -15,7 +15,7 @@ const ARROW_DELTAS = Object.freeze({
 });
 
 export function isEditableShortcutTarget(target) {
-  return Boolean(target?.closest?.("input,textarea,select,[contenteditable=true]"));
+  return Boolean(target?.isContentEditable || target?.closest?.("input,textarea,select,[contenteditable]:not([contenteditable=false])"));
 }
 
 export function keyboardShortcutFromEvent(event) {
